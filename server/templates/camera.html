@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>CabinWatch Camera</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #0d1117; color: #e6edf3; padding: 0 0 30px;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid #30363d; background: #161b22;
+  }
+  header h1 { margin: 0; font-size: 16px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #6e7681; }
+  .dot.on { background: #3fb950; box-shadow: 0 0 7px #3fb950; }
+  main { padding: 16px; max-width: 560px; margin: 0 auto; }
+
+  .box {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .box h2 {
+    margin: 0 0 10px; font-size: 12px; color: #8b949e;
+    text-transform: uppercase; letter-spacing: .8px;
+  }
+  label { display: block; font-size: 12px; color: #8b949e; margin: 10px 0 5px; }
+  input, select {
+    width: 100%; padding: 10px 12px; font-size: 15px; border-radius: 8px;
+    border: 1px solid #30363d; background: #0d1117; color: #e6edf3;
+  }
+  .btn {
+    width: 100%; padding: 13px; font-size: 16px; font-weight: 600; border: 0;
+    border-radius: 10px; cursor: pointer; background: #238636; color: #fff;
+  }
+  .btn.stop { background: #da3633; }
+  .btn:disabled { background: #30363d; color: #6e7681; }
+  .btn.alt {
+    background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+    font-weight: 500; font-size: 14px; padding: 10px;
+  }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+
+  video { width: 100%; border-radius: 9px; background: #010409; display: block; }
+
+  .stat { display: flex; justify-content: space-between; font-size: 13px;
+          padding: 4px 0; border-bottom: 1px solid #21262d; }
+  .stat:last-child { border-bottom: 0; }
+  .stat span:last-child { color: #8b949e; }
+  .ok { color: #3fb950 !important; }
+  .bad { color: #f85149 !important; }
+  .warn { color: #d29922 !important; }
+
+  .meter { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+  .meter > i { display: block; height: 100%; background: #3fb950; width: 0; }
+  .meter > i.hot { background: #f85149; }
+
+  .note { font-size: 12px; color: #6e7681; margin-top: 8px; }
+
+  /* Night cover: a black screen so the phone is discreet in a dark room,
+     while the camera keeps running underneath. */
+  #cover {
+    position: fixed; inset: 0; background: #000; z-index: 99; display: none;
+    color: #1b2026; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; font-size: 13px;
+  }
+  #cover.show { display: flex; }
+  #cover .live { width: 7px; height: 7px; border-radius: 50%; background: #16301d; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>CabinWatch Camera</h1>
+  <span style="margin-left:auto;font-size:12px;color:#8b949e" id="hdr">idle</span>
+</header>
+
+<main>
+  <div class="box" id="setupBox">
+    <h2>Set up this device as a camera</h2>
+
+    <label for="camName">Name it (so you know which one it is)</label>
+    <input id="camName" placeholder="Baby Room" autocomplete="off">
+
+    <label for="lens">Which camera to use</label>
+    <select id="lens"></select>
+
+    <label for="place">What is it watching</label>
+    <select id="place">
+      <option value="baby">Baby room - alert me on sounds and movement</option>
+      <option value="cabin">Cabin / office - alert me on movement</option>
+    </select>
+
+    <label for="retention">Keep recordings on this phone for</label>
+    <select id="retention">
+      <option value="6">6 hours</option>
+      <option value="12" selected>12 hours</option>
+      <option value="24">24 hours</option>
+      <option value="48">2 days</option>
+    </select>
+
+    <label for="maxmb">Maximum storage to use on this phone</label>
+    <select id="maxmb">
+      <option value="500">500 MB</option>
+      <option value="1000">1 GB</option>
+      <option value="2000" selected>2 GB</option>
+      <option value="4000">4 GB</option>
+      <option value="8000">8 GB</option>
+    </select>
+
+    <div style="height:14px"></div>
+    <button class="btn" id="startBtn">Start camera</button>
+    <div class="note">
+      Keep this page open and plug the phone in to charge. Recording happens
+      here on the phone; the server only sees frames while you are watching.
+    </div>
+  </div>
+
+  <div class="box" id="liveBox" style="display:none">
+    <h2>This device</h2>
+    <video id="preview" muted playsinline autoplay></video>
+    <div style="height:10px"></div>
+    <div class="meter"><i id="lvl"></i></div>
+    <div style="height:12px"></div>
+    <div class="row">
+      <button class="btn alt" id="flipBtn">Flip camera</button>
+      <button class="btn alt" id="coverBtn">Dim screen</button>
+    </div>
+    <div style="height:8px"></div>
+    <button class="btn stop" id="stopBtn">Stop camera</button>
+  </div>
+
+  <div class="box" id="statBox" style="display:none">
+    <h2>Status</h2>
+    <div class="stat"><span>Server</span><span id="sConn">-</span></div>
+    <div class="stat"><span>Recording</span><span id="sRec">-</span></div>
+    <div class="stat"><span>Saved on this phone</span><span id="sClips">-</span></div>
+    <div class="stat"><span>Storage used</span><span id="sDisk">-</span></div>
+    <div class="stat"><span>Last movement</span><span id="sMot">-</span></div>
+    <div class="stat"><span>Last sound</span><span id="sSnd">-</span></div>
+    <div class="stat"><span>Battery</span><span id="sBat">-</span></div>
+    <div class="stat"><span>Being watched</span><span id="sWatch">-</span></div>
+  </div>
+</main>
+
+<div id="cover">
+  <div class="live" id="coverDot"></div>
+  <div>camera running - tap to wake</div>
+</div>
+
+<script>
+/* ===========================================================================
+   CabinWatch phone camera.
+
+   This page turns a spare phone (Android or iPhone) into a CCTV camera:
+
+     - captures the camera and mic
+     - records continuously to the PHONE's own storage, oldest deleted first
+     - detects movement and sound here on the phone, so nothing is uploaded
+       unless something actually happens
+     - connects OUTBOUND to the server, so the phone can be on any network
+     - sends video frames only while somebody is watching
+     - can be talked through, and listened to, from the dashboard
+   =========================================================================== */
+
+const AUDIO_RATE = {{ audio_rate }};
+const CHUNK_SAMPLES = {{ chunk_samples }};
+const TOKEN = {{ agent_token | tojson }};
+
+const BIN_VIDEO = 0x01, BIN_AUDIO = 0x02, BIN_CLIP = 0x03;
+
+const SEGMENT_MS = 60000;          // one recorded file per minute
+const STATE_EVERY = 2000;
+const DB_NAME = "cabinwatch", DB_STORE = "clips";
+
+/* ---- runtime state ---- */
+let ws = null, wsTimer = null;
+let stream = null, camId = null, camName = "";
+let lenses = [], activeLens = null;
+let running = false;
+
+let streamSpec = null;             // {width, fps, quality} while being watched
+let frameTimer = null;
+let sendAudio = false;             // dashboard is listening
+let zoom = 1.0;
+
+let recorder = null, recTimer = null, manualRecord = false;
+let clipCount = 0, usedBytes = 0;
+let retentionHours = 12, maxBytes = 2000 * 1024 * 1024;
+
+let babyMode = true, armed = true;
+let lastMotionAt = 0, lastSoundAt = 0, pendingKeep = new Set();
+let motionOn = false, soundOn = false, audioLevel = 0;
+let wakeLock = null;
+
+const video = document.getElementById("preview");
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d", { alpha: false });
+// Tiny canvas used only for movement detection - cheap on battery.
+const mcv = document.createElement("canvas");
+mcv.width = 64; mcv.height = 48;
+const mctx = mcv.getContext("2d", { alpha: false, willReadFrequently: true });
+let prevGray = null;
+
+/* =======================================================================
+   Local storage of recordings (IndexedDB)
+   ======================================================================= */
+let db = null;
+
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => {
+      const s = r.result.createObjectStore(DB_STORE, { keyPath: "name" });
+      s.createIndex("at", "at");
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+function tx(mode) {
+  return db.transaction(DB_STORE, mode).objectStore(DB_STORE);
+}
+
+function dbPut(rec) {
+  return new Promise((res, rej) => {
+    const q = tx("readwrite").put(rec);
+    q.onsuccess = res; q.onerror = () => rej(q.error);
+  });
+}
+
+function dbGet(name) {
+  return new Promise((res, rej) => {
+    const q = tx("readonly").get(name);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+}
+
+function dbAll() {
+  return new Promise((res, rej) => {
+    const q = tx("readonly").getAll();
+    q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error);
+  });
+}
+
+function dbDel(name) {
+  return new Promise((res) => {
+    const q = tx("readwrite").delete(name);
+    q.onsuccess = res; q.onerror = res;
+  });
+}
+
+/* Delete the oldest recordings once they age out or fill the budget.
+   Anything marked "keep" (a movement or sound event) survives longer. */
+async function houseKeep() {
+  const all = await dbAll();
+  all.sort((a, b) => a.at - b.at);
+  const now = Date.now();
+  let total = all.reduce((n, c) => n + (c.size || 0), 0);
+
+  for (const c of all) {
+    const ageH = (now - c.at) / 3600000;
+    const limit = c.keep ? retentionHours * 4 : retentionHours;
+    if (ageH > limit) { await dbDel(c.name); total -= c.size || 0; }
+  }
+  // Still over budget: drop oldest ordinary clips first, event clips last.
+  if (total > maxBytes) {
+    const left = (await dbAll()).sort(
+      (a, b) => (a.keep - b.keep) || (a.at - b.at));
+    for (const c of left) {
+      if (total <= maxBytes) break;
+      await dbDel(c.name); total -= c.size || 0;
+    }
+  }
+  const final = await dbAll();
+  clipCount = final.length;
+  usedBytes = final.reduce((n, c) => n + (c.size || 0), 0);
+}
+
+/* =======================================================================
+   Camera + mic
+   ======================================================================= */
+async function listLenses() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    lenses = devs.filter(d => d.kind === "videoinput").map((d, i) => ({
+      id: d.deviceId,
+      label: d.label || `Camera ${i + 1}`
+    }));
+  } catch (e) { lenses = []; }
+
+  const sel = document.getElementById("lens");
+  sel.innerHTML = lenses.length
+    ? lenses.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join("")
+    : `<option value="">Default camera</option>`;
+  if (activeLens) sel.value = activeLens;
+}
+
+async function openStream(deviceId) {
+  const want = {
+    video: deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      : { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: {
+      echoCancellation: false,   // we want to hear the room as it is
+      noiseSuppression: false,
+      autoGainControl: false
+    }
+  };
+  const s = await navigator.mediaDevices.getUserMedia(want);
+  const track = s.getVideoTracks()[0];
+  activeLens = track && track.getSettings ? track.getSettings().deviceId : deviceId;
+  return s;
+}
+
+async function switchLens(deviceId) {
+  if (!running) return;
+  const old = stream;
+  try {
+    stopRecorder();
+    stream = await openStream(deviceId);
+    video.srcObject = stream;
+    prevGray = null;
+    startAudioAnalysis();
+    startRecorder();
+    if (old) old.getTracks().forEach(t => t.stop());
+    await listLenses();
+    log(`switched to lens ${activeLens}`);
+  } catch (e) {
+    stream = old;
+    log("lens switch failed: " + e.message);
+  }
+}
+
+/* =======================================================================
+   Movement detection
+   ======================================================================= */
+function detectMotion() {
+  if (!video.videoWidth) return false;
+  mctx.drawImage(video, 0, 0, mcv.width, mcv.height);
+  const d = mctx.getImageData(0, 0, mcv.width, mcv.height).data;
+  const gray = new Uint8Array(mcv.width * mcv.height);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    gray[p] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+  }
+  if (!prevGray) { prevGray = gray; return false; }
+
+  let changed = 0;
+  for (let i = 0; i < gray.length; i++) {
+    if (Math.abs(gray[i] - prevGray[i]) > 22) changed++;
+  }
+  prevGray = gray;
+  // Needs ~1.5% of the frame to change, which ignores sensor noise and
+  // slow light changes but catches a baby turning over.
+  return changed / gray.length > 0.015;
+}
+
+/* =======================================================================
+   Sound: level, "baby crying", and a sharp thud (a fall)
+   ======================================================================= */
+let audioCtx = null, analyser = null, freqData = null, timeData = null;
+let micSource = null, micNode = null;
+let baseline = 0.004, loudSince = 0;
+
+function startAudioAnalysis() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (micSource) { try { micSource.disconnect(); } catch (e) {} }
+    micSource = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.3;
+    micSource.connect(analyser);
+    freqData = new Float32Array(analyser.frequencyBinCount);
+    timeData = new Float32Array(analyser.fftSize);
+    startAudioSend();
+  } catch (e) { log("audio analysis failed: " + e.message); }
+}
+
+function analyseAudio() {
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  const rms = Math.sqrt(sum / timeData.length);
+  audioLevel = rms;
+
+  // Slowly learn what "quiet" sounds like in this room.
+  if (rms < baseline * 2) baseline = baseline * 0.995 + rms * 0.005;
+  baseline = Math.max(baseline, 0.0008);
+
+  analyser.getFloatFrequencyData(freqData);
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  let low = 0, voice = 0, total = 0;
+  for (let i = 1; i < freqData.length; i++) {
+    const hz = i * binHz;
+    const e = Math.pow(10, freqData[i] / 10);
+    total += e;
+    if (hz < 250) low += e;
+    else if (hz < 2500) voice += e;      // where a baby's cry sits
+  }
+  const voiceRatio = total > 0 ? voice / total : 0;
+  const lowRatio = total > 0 ? low / total : 0;
+
+  const loud = rms > Math.max(baseline * 4.5, 0.012);
+  const now = Date.now();
+
+  if (loud) {
+    if (!loudSince) loudSince = now;
+  } else {
+    loudSince = 0;
+  }
+
+  soundOn = loud;
+  if (loud) lastSoundAt = now;
+
+  if (!armed) return;
+
+  // A thud: very sudden, very loud, and mostly low frequency.
+  if (rms > Math.max(baseline * 14, 0.09) && lowRatio > 0.45) {
+    fireEvent("impact", "A sudden thud was heard - check straight away.");
+    loudSince = 0;
+    return;
+  }
+  // A cry: loud, sustained for over a second, energy in the voice band.
+  if (babyMode && loudSince && now - loudSince > 1200 && voiceRatio > 0.42) {
+    fireEvent("cry", "Crying or fussing for over a second.");
+    loudSince = 0;
+    return;
+  }
+  if (loudSince && now - loudSince > 2500) {
+    fireEvent("sound", "Continuous sound in the room.");
+    loudSince = 0;
+  }
+}
+
+/* ---- sending our mic up to the dashboard (Listen) ---- */
+function startAudioSend() {
+  if (!audioCtx || micNode) return;
+  const size = 4096;
+  micNode = audioCtx.createScriptProcessor
+    ? audioCtx.createScriptProcessor(size, 1, 1)
+    : null;
+  if (!micNode) return;
+  let acc = [];
+  micNode.onaudioprocess = (e) => {
+    if (!sendAudio || !ws || ws.readyState !== 1) { acc = []; return; }
+    const input = e.inputBuffer.getChannelData(0);
+    // Resample from the device rate down to AUDIO_RATE.
+    const ratio = audioCtx.sampleRate / AUDIO_RATE;
+    for (let i = 0; i < input.length; i += ratio) {
+      acc.push(input[Math.floor(i)]);
+    }
+    while (acc.length >= CHUNK_SAMPLES) {
+      const slice = acc.slice(0, CHUNK_SAMPLES);
+      acc = acc.slice(CHUNK_SAMPLES);
+      const pcm = new Int16Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        const v = Math.max(-1, Math.min(1, slice[i]));
+        pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      }
+      sendBinary(BIN_AUDIO, new Uint8Array(pcm.buffer));
+    }
+  };
+  const mute = audioCtx.createGain();
+  mute.gain.value = 0;
+  micSource.connect(micNode);
+  micNode.connect(mute);
+  mute.connect(audioCtx.destination);
+}
+
+/* ---- playing the dashboard's voice out of this phone (Talk) ---- */
+let playAt = 0;
+function playTalk(bytes) {
+  if (!audioCtx) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const pcm = new Int16Array(bytes.buffer, bytes.byteOffset,
+                             Math.floor(bytes.byteLength / 2));
+  const buf = audioCtx.createBuffer(1, pcm.length, AUDIO_RATE);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+  if (playAt < now + 0.05) playAt = now + 0.08;
+  src.start(playAt);
+  playAt += buf.duration;
+}
+
+/* =======================================================================
+   Recording to this phone
+   ======================================================================= */
+function pickMime() {
+  const want = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+    "video/mp4;codecs=h264,aac",
+    "video/mp4"
+  ];
+  for (const m of want) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return "";
+}
+
+function startRecorder() {
+  if (!stream || !window.MediaRecorder) return;
+  const mime = pickMime();
+  try {
+    recorder = mime
+      ? new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 900000 })
+      : new MediaRecorder(stream);
+  } catch (e) { log("recorder failed: " + e.message); return; }
+
+  const startedAt = Date.now();
+  const parts = [];
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  recorder.onstop = async () => {
+    if (!parts.length) return;
+    const blob = new Blob(parts, { type: recorder.mimeType || "video/webm" });
+    const ext = (recorder.mimeType || "").includes("mp4") ? "mp4" : "webm";
+    const name = `${stamp(startedAt)}.${ext}`;
+    const keep = pendingKeep.size > 0;
+    pendingKeep.clear();
+    try {
+      await dbPut({ name, blob, size: blob.size, at: startedAt, keep,
+                    type: blob.type });
+      await houseKeep();
+    } catch (e) { log("could not save clip: " + e.message); }
+  };
+  recorder.start();
+  clearTimeout(recTimer);
+  recTimer = setTimeout(() => { rollRecorder(); }, SEGMENT_MS);
+}
+
+function rollRecorder() {
+  // One file per minute: stop, save, start the next immediately.
+  if (recorder && recorder.state !== "inactive") {
+    try { recorder.stop(); } catch (e) {}
+  }
+  if (running) setTimeout(startRecorder, 150);
+}
+
+function stopRecorder() {
+  clearTimeout(recTimer);
+  if (recorder && recorder.state !== "inactive") {
+    try { recorder.stop(); } catch (e) {}
+  }
+  recorder = null;
+}
+
+/* =======================================================================
+   Events
+   ======================================================================= */
+let lastFired = {};
+function fireEvent(kind, detail) {
+  const now = Date.now();
+  if (now - (lastFired[kind] || 0) < 25000) return;
+  lastFired[kind] = now;
+  pendingKeep.add(kind);                 // this minute's clip is worth keeping
+  send({ t: "event", kind, detail, thumb: grabThumb() });
+  log(`event: ${kind}`);
+}
+
+function grabThumb() {
+  try {
+    if (!video.videoWidth) return null;
+    const w = 320, h = Math.round(w * video.videoHeight / video.videoWidth);
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
+  } catch (e) { return null; }
+}
+
+/* =======================================================================
+   Sending frames while somebody watches
+   ======================================================================= */
+function drawFrame(width) {
+  if (!video.videoWidth) return null;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const w = Math.min(width, vw);
+  const h = Math.round(w * vh / vw);
+  canvas.width = w; canvas.height = h;
+
+  if (zoom > 1.01) {
+    // Digital zoom: a phone has no motor, so crop the centre instead.
+    const cw = vw / zoom, chh = vh / zoom;
+    ctx.drawImage(video, (vw - cw) / 2, (vh - chh) / 2, cw, chh, 0, 0, w, h);
+  } else {
+    ctx.drawImage(video, 0, 0, w, h);
+  }
+
+  // Burn in the name and time so a saved screenshot still proves when.
+  const pad = Math.max(10, Math.round(h * 0.045));
+  ctx.fillStyle = "rgba(0,0,0,.55)";
+  ctx.fillRect(0, h - pad - 6, w, pad + 6);
+  ctx.fillStyle = "#fff";
+  ctx.font = `${Math.round(pad * 0.75)}px system-ui, sans-serif`;
+  ctx.fillText(`${camName}  ${new Date().toLocaleString()}`, 6, h - 8);
+  return canvas;
+}
+
+function startFrames(spec) {
+  stopFrames();
+  streamSpec = spec;
+  const every = Math.max(40, 1000 / (spec.fps || 4));
+  frameTimer = setInterval(() => {
+    const c = drawFrame(spec.width || 480);
+    if (!c || !ws || ws.readyState !== 1) return;
+    c.toBlob(async (blob) => {
+      if (!blob || !ws || ws.readyState !== 1) return;
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      sendBinary(BIN_VIDEO, buf);
+    }, "image/jpeg", (spec.quality || 55) / 100);
+  }, every);
+}
+
+function stopFrames() {
+  clearInterval(frameTimer);
+  frameTimer = null;
+  streamSpec = null;
+}
+
+/* =======================================================================
+   Server connection
+   ======================================================================= */
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+function sendBinary(tag, payload, xfer) {
+  if (!ws || ws.readyState !== 1) return;
+  const head = xfer === undefined ? 1 : 5;
+  const out = new Uint8Array(head + payload.length);
+  out[0] = tag;
+  if (xfer !== undefined) {
+    out[1] = (xfer >>> 24) & 255; out[2] = (xfer >>> 16) & 255;
+    out[3] = (xfer >>> 8) & 255;  out[4] = xfer & 255;
+  }
+  out.set(payload, head);
+  ws.send(out);
+}
+
+function log(detail) {
+  console.log("[cabinwatch]", detail);
+  send({ t: "log", detail });
+}
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url = `${proto}://${location.host}/ws/camera`
+    + `?token=${encodeURIComponent(TOKEN)}`
+    + `&id=${encodeURIComponent(camId)}`
+    + `&name=${encodeURIComponent(camName)}&kind=browser`;
+  ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    setDot(true);
+    document.getElementById("hdr").textContent = "connected";
+    pushState();
+  };
+  ws.onclose = () => {
+    setDot(false);
+    document.getElementById("hdr").textContent = "reconnecting...";
+    stopFrames();
+    if (running) setTimeout(connect, 3000);
+  };
+  ws.onerror = () => {};
+  ws.onmessage = (e) => {
+    if (typeof e.data !== "string") {
+      const b = new Uint8Array(e.data);
+      if (b[0] === BIN_AUDIO) playTalk(b.subarray(1));
+      return;
+    }
+    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    handle(m);
+  };
+}
+
+async function handle(m) {
+  switch (m.t) {
+    case "stream":
+      if (m.on) startFrames(m); else stopFrames();
+      break;
+    case "audio":
+      sendAudio = !!m.on;
+      if (sendAudio && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      break;
+    case "talk":
+      if (m.on && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      playAt = 0;
+      break;
+    case "record":
+      manualRecord = !!m.on;
+      if (manualRecord) pendingKeep.add("manual");
+      pushState();
+      break;
+    case "baby_mode":
+      babyMode = !!m.on; pushState(); break;
+    case "arm":
+      armed = !!m.on; pushState(); break;
+    case "lens":
+      if (m.id) switchLens(m.id); break;
+    case "zoom":
+      zoom = Math.max(1, Math.min(4, Number(m.value) || 1)); break;
+    case "config":
+      applyConfig(m.values || {}); break;
+    case "list_clips":
+      sendClipList(); break;
+    case "get_clip":
+      sendClip(m.file, m.xfer); break;
+    case "cancel_clip":
+      cancelled.add(m.xfer); break;
+    case "restart":
+      location.reload(); break;
+  }
+}
+
+function applyConfig(v) {
+  if (v.retention_hours) retentionHours = Number(v.retention_hours);
+  if (v.max_mb) maxBytes = Number(v.max_mb) * 1024 * 1024;
+  houseKeep().then(pushState);
+}
+
+/* ---- clip listing + upload on demand ---- */
+async function sendClipList() {
+  const all = await dbAll();
+  all.sort((a, b) => b.at - a.at);
+  send({
+    t: "clips",
+    items: all.slice(0, 400).map(c => ({
+      file: c.name,
+      size_mb: Math.round((c.size || 0) / 104857.6) / 10,
+      at: Math.round(c.at / 1000),
+      when: new Date(c.at).toLocaleString(),
+      keep: !!c.keep
+    }))
+  });
+}
+
+const cancelled = new Set();
+async function sendClip(name, xfer) {
+  const rec = await dbGet(name);
+  if (!rec) { send({ t: "clip_error", xfer, detail: "not found" }); return; }
+  send({ t: "clip_start", xfer, size: rec.size,
+         type: rec.type || "video/webm" });
+  const CH = 48 * 1024;
+  try {
+    for (let off = 0; off < rec.blob.size; off += CH) {
+      if (cancelled.has(xfer)) break;
+      // Back off if the socket is congested, so we never blow up memory.
+      while (ws && ws.bufferedAmount > 1.5 * 1024 * 1024) {
+        await new Promise(r => setTimeout(r, 60));
+        if (!ws || ws.readyState !== 1) return;
+      }
+      const slice = rec.blob.slice(off, off + CH);
+      sendBinary(BIN_CLIP, new Uint8Array(await slice.arrayBuffer()), xfer);
+    }
+    send({ t: "clip_end", xfer });
+  } catch (e) {
+    send({ t: "clip_error", xfer, detail: e.message });
+  } finally {
+    cancelled.delete(xfer);
+  }
+}
+
+/* =======================================================================
+   Heartbeat
+   ======================================================================= */
+let battery = null;
+async function initBattery() {
+  try { battery = await navigator.getBattery(); } catch (e) { battery = null; }
+}
+
+function pushState() {
+  const now = Date.now();
+  send({
+    t: "state",
+    name: camName,
+    status: running ? "live" : "idle",
+    recording: !!(recorder && recorder.state === "recording"),
+    motion: motionOn,
+    sound: soundOn,
+    audio_level: Math.round(audioLevel * 1000) / 1000,
+    baby_mode: babyMode,
+    armed: armed,
+    clips: clipCount,
+    disk_free_gb: Math.round((maxBytes - usedBytes) / 1073741824 * 10) / 10,
+    retention_hours: retentionHours,
+    quiet_for_s: lastMotionAt ? Math.round((now - lastMotionAt) / 1000) : null,
+    silent_for_s: lastSoundAt ? Math.round((now - lastSoundAt) / 1000) : null,
+    battery: battery ? Math.round(battery.level * 100) : null,
+    charging: battery ? battery.charging : null,
+    lenses: lenses,
+    active_lens: activeLens,
+    zoom: zoom,
+    has_audio: true,
+    has_speaker: true,
+    ptz: false
+  });
+  paintStats();
+}
+
+function paintStats() {
+  const now = Date.now();
+  const q = (id, txt, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = txt;
+    el.className = cls || "";
+  };
+  q("sConn", ws && ws.readyState === 1 ? "connected" : "offline",
+    ws && ws.readyState === 1 ? "ok" : "bad");
+  q("sRec", recorder && recorder.state === "recording" ? "yes" : "no",
+    recorder && recorder.state === "recording" ? "ok" : "warn");
+  q("sClips", `${clipCount} clips`);
+  q("sDisk", `${(usedBytes / 1048576).toFixed(0)} MB of `
+    + `${(maxBytes / 1048576).toFixed(0)} MB`);
+  q("sMot", lastMotionAt ? ago(now - lastMotionAt) : "nothing yet");
+  q("sSnd", lastSoundAt ? ago(now - lastSoundAt) : "nothing yet");
+  q("sBat", battery
+    ? `${Math.round(battery.level * 100)}%${battery.charging ? " charging" : ""}`
+    : "unknown",
+    battery && battery.level < 0.2 && !battery.charging ? "bad" : "");
+  q("sWatch", streamSpec ? "yes - sending video" : "no - saving data",
+    streamSpec ? "warn" : "ok");
+  const l = document.getElementById("lvl");
+  if (l) {
+    l.style.width = Math.min(100, audioLevel * 300) + "%";
+    l.className = soundOn ? "hot" : "";
+  }
+}
+
+function ago(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  return `${Math.round(s / 360) / 10} h ago`;
+}
+
+/* =======================================================================
+   Start / stop
+   ======================================================================= */
+async function start() {
+  camName = document.getElementById("camName").value.trim() || "Camera";
+  camId = slug(camName) + "-" + Math.random().toString(36).slice(2, 6);
+  retentionHours = Number(document.getElementById("retention").value);
+  maxBytes = Number(document.getElementById("maxmb").value) * 1024 * 1024;
+  babyMode = document.getElementById("place").value === "baby";
+
+  const wanted = document.getElementById("lens").value || null;
+
+  try {
+    db = await openDB();
+  } catch (e) { alert("Cannot open local storage: " + e.message); return; }
+
+  try {
+    stream = await openStream(wanted);
+  } catch (e) {
+    alert("Could not open the camera.\n\n" + e.message
+      + "\n\nMake sure you opened this page over https and allowed camera "
+      + "and microphone access.");
+    return;
+  }
+
+  running = true;
+  video.srcObject = stream;
+  document.getElementById("setupBox").style.display = "none";
+  document.getElementById("liveBox").style.display = "";
+  document.getElementById("statBox").style.display = "";
+
+  await listLenses();
+  await initBattery();
+  try { await navigator.storage.persist(); } catch (e) {}
+
+  startAudioAnalysis();
+  startRecorder();
+  await houseKeep();
+  connect();
+
+  // Keep the screen from sleeping, or the browser stops the camera.
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (e) { /* not supported - the dim-screen cover still helps */ }
+
+  // Main loop: movement + sound checks, several times a second.
+  setInterval(() => {
+    if (!running) return;
+    const m = detectMotion();
+    if (m) {
+      lastMotionAt = Date.now();
+      if (!motionOn && armed) {
+        fireEvent("motion", babyMode
+          ? "Your baby moved."
+          : "Movement in view.");
+      }
+    }
+    motionOn = m;
+    analyseAudio();
+  }, 350);
+
+  setInterval(() => { if (running) pushState(); }, STATE_EVERY);
+  setInterval(() => { if (running) houseKeep(); }, 60000);
+}
+
+function stop() {
+  running = false;
+  stopFrames();
+  stopRecorder();
+  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} }
+  location.reload();
+}
+
+/* ---- buttons ---- */
+document.getElementById("startBtn").onclick = start;
+document.getElementById("stopBtn").onclick = () => {
+  if (confirm("Stop this camera? It will stop recording and alerting."))
+    stop();
+};
+document.getElementById("flipBtn").onclick = () => {
+  if (lenses.length < 2) { alert("This phone reports only one camera."); return; }
+  const i = lenses.findIndex(l => l.id === activeLens);
+  switchLens(lenses[(i + 1) % lenses.length].id);
+};
+document.getElementById("lens").onchange = (e) => {
+  if (running) switchLens(e.target.value);
+};
+const cover = document.getElementById("cover");
+document.getElementById("coverBtn").onclick = () => cover.classList.add("show");
+cover.onclick = () => cover.classList.remove("show");
+setInterval(() => {
+  const d = document.getElementById("coverDot");
+  if (d) d.style.background = d.style.background === "rgb(22, 48, 29)"
+    ? "#0a140d" : "#16301d";
+}, 2000);
+
+// A phone screen going off can suspend the audio context; wake it on return.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && audioCtx && audioCtx.state === "suspended")
+    audioCtx.resume();
+});
+
+function slug(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "").slice(0, 40) || "cam";
+}
+function stamp(ms) {
+  const d = new Date(ms), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+       + `_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+function setDot(on) {
+  document.getElementById("dot").className = "dot" + (on ? " on" : "");
+}
+
+// Ask for permission early so the lens list has real names, not "camera 1".
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  .then(s => { s.getTracks().forEach(t => t.stop()); return listLenses(); })
+  .catch(() => listLenses());
+</script>
+</body>
+</html>

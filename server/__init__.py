@@ -1,0 +1,1 @@
+"""CabinWatch server package."""

@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CabinWatch</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #0d1117; color: #e6edf3; padding: 0 0 40px;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+    gap: 10px; padding: 11px 14px; background: #161b22f2;
+    backdrop-filter: blur(8px); border-bottom: 1px solid #30363d;
+  }
+  header h1 { margin: 0; font-size: 16px; letter-spacing: .2px; }
+  header .clock { margin-left: auto; font-size: 11px; color: #8b949e; }
+  .ghost {
+    background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+    padding: 6px 10px; border-radius: 7px; font-size: 12px; cursor: pointer;
+  }
+  .ghost:hover { background: #30363d; }
+  main { padding: 14px; max-width: 1500px; margin: 0 auto; }
+
+  .banner {
+    margin-bottom: 12px; padding: 10px 12px; border-radius: 9px; font-size: 13px;
+    background: #2b2000; border: 1px solid #6b4b00; color: #ffd98a;
+  }
+  .banner code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
+
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  }
+  .cam {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .cam.alert { border-color: #d29922; }
+  .cam.offline { opacity: .55; }
+
+  .cam .top {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    border-bottom: 1px solid #30363d;
+  }
+  .cam .top .nm { font-weight: 600; font-size: 14px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .dot.on { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  .dot.off { background: #6e7681; }
+  .still {
+    margin-left: auto; font-size: 11px; color: #8b949e; text-align: right;
+    line-height: 1.25;
+  }
+  .still b { color: #3fb950; font-weight: 600; }
+  .still b.moving { color: #d29922; }
+
+  .screen {
+    position: relative; aspect-ratio: 16/9; background: #010409;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .screen img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .screen .idle { color: #6e7681; font-size: 13px; text-align: center; padding: 14px; }
+  .screen .pill { position: absolute; top: 7px; left: 7px; display: flex;
+                  gap: 5px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .5px; padding: 3px 6px;
+    border-radius: 20px; background: #0d1117cc; border: 1px solid #30363d;
+  }
+  .tag.rec { background: #da3633; border-color: #f85149; color: #fff; }
+  .tag.mot { background: #9e6a03; border-color: #d29922; color: #fff; }
+  .tag.snd { background: #1f6feb; border-color: #58a6ff; color: #fff; }
+
+  /* PTZ pad, laid over the picture */
+  .pad {
+    position: absolute; right: 8px; bottom: 8px;
+    display: grid; grid-template-columns: repeat(3, 32px);
+    grid-template-rows: repeat(3, 32px); gap: 3px;
+  }
+  .pad button {
+    background: #0d1117c9; border: 1px solid #30363d; color: #e6edf3;
+    border-radius: 7px; font-size: 14px; cursor: pointer; padding: 0;
+  }
+  .pad button:active { background: #1f6feb; }
+  .pad .mid { font-size: 10px; letter-spacing: .3px; }
+
+  .meter { height: 4px; background: #21262d; }
+  .meter > i { display: block; height: 100%; background: #3fb950; width: 0;
+               transition: width .15s; }
+  .meter > i.hot { background: #f85149; }
+
+  .cam .rows { padding: 10px 12px; display: grid; gap: 8px; }
+  .seg { display: flex; border: 1px solid #30363d; border-radius: 8px;
+         overflow: hidden; }
+  .seg button {
+    flex: 1; padding: 7px 3px; font-size: 12px; background: #0d1117;
+    color: #8b949e; border: 0; cursor: pointer; border-right: 1px solid #30363d;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button.sel { background: #1f6feb; color: #fff; font-weight: 600; }
+
+  .btns { display: flex; gap: 7px; flex-wrap: wrap; }
+  .btns button {
+    flex: 1 1 auto; min-width: 72px; padding: 8px 6px; font-size: 12px;
+    border-radius: 8px; border: 1px solid #30363d; background: #21262d;
+    color: #e6edf3; cursor: pointer;
+  }
+  .btns button.active { background: #238636; border-color: #2ea043; font-weight: 600; }
+  .btns button.recon { background: #da3633; border-color: #f85149; font-weight: 600; }
+  .btns button.talking { background: #1f6feb; border-color: #58a6ff; font-weight: 600; }
+  .btns button:disabled { opacity: .4; cursor: default; }
+
+  .inline { display: flex; gap: 7px; align-items: center; }
+  .inline select, .inline input[type=range] {
+    flex: 1; min-width: 0; background: #0d1117; color: #e6edf3;
+    border: 1px solid #30363d; border-radius: 7px; padding: 6px 8px;
+    font-size: 12px;
+  }
+  .inline label { font-size: 11px; color: #6e7681; flex: 0 0 auto; }
+  .stats { font-size: 11px; color: #6e7681; display: flex; gap: 9px; flex-wrap: wrap; }
+  .stats .bad { color: #f85149; }
+
+  .empty {
+    border: 1px dashed #30363d; border-radius: 12px; padding: 32px 20px;
+    text-align: center; color: #8b949e;
+  }
+  .empty h2 { margin: 0 0 8px; font-size: 17px; color: #e6edf3; }
+  .empty code { background: #0d1117; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+
+  h2.sec { font-size: 13px; color: #8b949e; margin: 24px 0 9px;
+           text-transform: uppercase; letter-spacing: .8px; }
+  .events { display: grid; gap: 7px; }
+  .ev { display: flex; gap: 10px; align-items: center; padding: 7px 10px;
+        background: #161b22; border: 1px solid #30363d; border-radius: 9px; }
+  .ev img { width: 74px; height: 42px; object-fit: cover; border-radius: 5px;
+            background: #010409; flex: 0 0 auto; cursor: pointer; }
+  .ev .txt { min-width: 0; }
+  .ev .k { font-size: 13px; font-weight: 600; }
+  .ev .d { font-size: 11px; color: #8b949e; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+  .ev .t { margin-left: auto; font-size: 11px; color: #6e7681;
+           flex: 0 0 auto; text-align: right; }
+  .ev.k-impact .k, .ev.k-person .k { color: #ff7b72; }
+  .ev.k-cry .k { color: #ffa657; }
+  .ev.k-offline .k { color: #d29922; }
+
+  /* modal for recordings stored on a device */
+  #modal {
+    position: fixed; inset: 0; background: #010409d9; z-index: 50;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #modal.show { display: flex; }
+  #modal .panel {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    width: 100%; max-width: 620px; max-height: 86vh; display: flex;
+    flex-direction: column;
+  }
+  #modal .ph { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+               border-bottom: 1px solid #30363d; }
+  #modal .ph h3 { margin: 0; font-size: 15px; }
+  #modal .pb { overflow: auto; padding: 10px 14px; }
+  #modal video { width: 100%; border-radius: 8px; background: #010409;
+                 margin-bottom: 10px; }
+  .clip { display: flex; gap: 10px; align-items: center; padding: 7px 0;
+          border-bottom: 1px solid #21262d; font-size: 13px; }
+  .clip:last-child { border-bottom: 0; }
+  .clip .kp { font-size: 10px; padding: 2px 6px; border-radius: 10px;
+              background: #9e6a03; color: #fff; }
+  .clip .sp { margin-left: auto; display: flex; gap: 6px; }
+  .clip a, .clip button {
+    font-size: 12px; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+    background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>CabinWatch</h1>
+  <span class="clock" id="clock"></span>
+  <button class="ghost" onclick="location.href='/camera'">+ Phone</button>
+  <form method="post" action="/logout" style="margin:0">
+    <button class="ghost" type="submit">Exit</button>
+  </form>
+</header>
+
+<main>
+  <div id="banner"></div>
+  <div class="grid" id="grid"></div>
+  <h2 class="sec">Recent activity</h2>
+  <div class="events" id="events"></div>
+</main>
+
+<div id="modal">
+  <div class="panel">
+    <div class="ph">
+      <h3 id="mTitle">Recordings on the device</h3>
+      <button class="ghost" style="margin-left:auto" onclick="closeModal()">Close</button>
+    </div>
+    <div class="pb" id="mBody"></div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+   CabinWatch dashboard.
+
+   Video and audio only move while you are actually watching or listening -
+   that is what keeps the hosting bill small. "Off" means the camera is told
+   to stop sending entirely.
+   =========================================================================== */
+
+const FOCUS = {{ focus | tojson }};
+const SNAPSHOT_EVERY = {{ snapshot_every }};
+const AUDIO_RATE = {{ audio_rate }};
+const BIN_VIDEO = 0x01, BIN_AUDIO = 0x02;
+
+const modes = {};        // camId -> off | snapshot | live | hd
+const listening = {};    // camId -> bool
+const sockets = {};      // camId -> WebSocket
+const urls = {};         // camId -> current object URL
+let cams = [], events = [];
+let talkCam = null, talkCtx = null, talkNode = null, talkStream = null;
+let playCtx = null, playAt = 0;
+
+const KIND_LABEL = {
+  motion: "Movement", sound: "Sound", cry: "Baby awake",
+  impact: "Thud / fall", person: "Person seen", offline: "Camera offline",
+  online: "Camera online", disk: "Storage low", test: "Test alert"
+};
+
+/* ---------- status socket ---------- */
+function connectDash() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws/dash`);
+  ws.onmessage = (e) => {
+    const s = JSON.parse(e.data);
+    cams = s.cameras; events = s.events;
+    document.getElementById("clock").textContent = s.server_time;
+    renderBanner(s);
+    render();
+  };
+  ws.onclose = () => setTimeout(connectDash, 3000);
+  setInterval(() => { if (ws.readyState === 1) ws.send("ping"); }, 25000);
+}
+
+function renderBanner(s) {
+  const b = document.getElementById("banner");
+  b.innerHTML = s.notifications ? "" :
+    `<div class="banner"><strong>Push notifications are off.</strong>
+      Set <code>NTFY_TOPIC</code> in your Railway variables and subscribe to
+      the same topic in the ntfy app, or you will not be woken when your baby
+      cries or someone enters.</div>`;
+}
+
+/* ---------- frame + audio socket per camera ---------- */
+function setMode(camId, mode) {
+  modes[camId] = mode;
+  if (mode === "off") {
+    if (listening[camId]) setListen(camId, false);
+    if (talkCam === camId) stopTalk();
+    const s = sockets[camId];
+    if (s) { s.close(); delete sockets[camId]; }
+    if (urls[camId]) { URL.revokeObjectURL(urls[camId]); delete urls[camId]; }
+    render();
+    return;
+  }
+  const s = sockets[camId];
+  if (s && s.readyState === 1) { s.send(JSON.stringify({ mode })); render(); }
+  else openSocket(camId, mode);
+}
+
+function openSocket(camId, mode) {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(
+    `${proto}://${location.host}/ws/view?cam=${encodeURIComponent(camId)}&mode=${mode}`);
+  ws.binaryType = "arraybuffer";
+  sockets[camId] = ws;
+
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") return;
+    const b = new Uint8Array(e.data);
+    if (b[0] === BIN_VIDEO) {
+      const img = document.getElementById("img-" + camId);
+      if (!img) return;
+      const blob = new Blob([b.subarray(1)], { type: "image/jpeg" });
+      const old = urls[camId];
+      urls[camId] = URL.createObjectURL(blob);
+      img.src = urls[camId];
+      if (old) URL.revokeObjectURL(old);
+    } else if (b[0] === BIN_AUDIO) {
+      playPcm(b.subarray(1));
+    }
+  };
+  ws.onclose = () => {
+    if (sockets[camId] === ws) {
+      delete sockets[camId];
+      if (modes[camId] && modes[camId] !== "off") {
+        setTimeout(() => {
+          if (modes[camId] && modes[camId] !== "off" && !sockets[camId])
+            openSocket(camId, modes[camId]);
+        }, 2500);
+      }
+    }
+  };
+  ws.onopen = () => {
+    if (listening[camId]) ws.send(JSON.stringify({ listen: true }));
+  };
+  render();
+}
+
+/* ---------- listen (hear the room) ---------- */
+function setListen(camId, on) {
+  listening[camId] = on;
+  if (on && (!modes[camId] || modes[camId] === "off")) {
+    setMode(camId, "live");
+  }
+  const s = sockets[camId];
+  if (s && s.readyState === 1) s.send(JSON.stringify({ listen: on }));
+  if (on) {
+    if (!playCtx) playCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (playCtx.state === "suspended") playCtx.resume();
+    playAt = 0;
+  }
+  render();
+}
+
+function playPcm(bytes) {
+  if (!playCtx) return;
+  const n = Math.floor(bytes.byteLength / 2);
+  if (!n) return;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+  const buf = playCtx.createBuffer(1, n, AUDIO_RATE);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+  const src = playCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(playCtx.destination);
+  const now = playCtx.currentTime;
+  if (playAt < now + 0.06) playAt = now + 0.12;   // small jitter cushion
+  src.start(playAt);
+  playAt += buf.duration;
+}
+
+/* ---------- talk (speak into the room) ---------- */
+async function startTalk(camId) {
+  if (talkCam) stopTalk();
+  if (!modes[camId] || modes[camId] === "off") setMode(camId, "live");
+  const s = sockets[camId];
+  if (!s) { alert("Open the camera first."); return; }
+
+  try {
+    talkStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: false
+    });
+  } catch (e) { alert("Microphone not available: " + e.message); return; }
+
+  talkCam = camId;
+  s.send(JSON.stringify({ talk: true }));
+
+  talkCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = talkCtx.createMediaStreamSource(talkStream);
+  talkNode = talkCtx.createScriptProcessor(4096, 1, 1);
+  let acc = [];
+  const chunk = Math.round(AUDIO_RATE * 0.06);
+  talkNode.onaudioprocess = (e) => {
+    const sock = sockets[talkCam];
+    if (!sock || sock.readyState !== 1) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const ratio = talkCtx.sampleRate / AUDIO_RATE;
+    for (let i = 0; i < input.length; i += ratio) acc.push(input[Math.floor(i)]);
+    while (acc.length >= chunk) {
+      const part = acc.slice(0, chunk);
+      acc = acc.slice(chunk);
+      const pcm = new Int16Array(part.length);
+      for (let i = 0; i < part.length; i++) {
+        const v = Math.max(-1, Math.min(1, part[i]));
+        pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      }
+      const out = new Uint8Array(1 + pcm.byteLength);
+      out[0] = BIN_AUDIO;
+      out.set(new Uint8Array(pcm.buffer), 1);
+      sock.send(out);
+    }
+  };
+  const mute = talkCtx.createGain();
+  mute.gain.value = 0;
+  src.connect(talkNode); talkNode.connect(mute); mute.connect(talkCtx.destination);
+  render();
+}
+
+function stopTalk() {
+  const s = talkCam ? sockets[talkCam] : null;
+  if (s && s.readyState === 1) s.send(JSON.stringify({ talk: false }));
+  if (talkNode) { try { talkNode.disconnect(); } catch (e) {} talkNode = null; }
+  if (talkCtx) { try { talkCtx.close(); } catch (e) {} talkCtx = null; }
+  if (talkStream) { talkStream.getTracks().forEach(t => t.stop()); talkStream = null; }
+  talkCam = null;
+  render();
+}
+
+function toggleTalk(camId) {
+  if (talkCam === camId) stopTalk(); else startTalk(camId);
+}
+
+/* ---------- commands ---------- */
+async function cmd(camId, what, body) {
+  try {
+    const r = await fetch(`/cmd/${encodeURIComponent(camId)}/${what}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    });
+    if (!r.ok) {
+      let msg = await r.text();
+      try { msg = JSON.parse(msg).detail || msg; } catch (e) {}
+      alert("Did not work: " + msg);
+    }
+  } catch (e) { alert("Did not work: " + e); }
+}
+
+let ptzHold = null;
+function ptzStart(camId, action) {
+  cmd(camId, "ptz", { action, speed: 0.6 });
+  clearTimeout(ptzHold);
+  // Safety: always stop, even if the pointerup event is missed.
+  ptzHold = setTimeout(() => cmd(camId, "ptz", { action: "stop" }), 2500);
+}
+function ptzStop(camId) {
+  clearTimeout(ptzHold);
+  cmd(camId, "ptz", { action: "stop" });
+}
+
+/* ---------- recordings stored on the device ---------- */
+async function openClips(camId, camName) {
+  const modal = document.getElementById("modal");
+  document.getElementById("mTitle").textContent = `Recordings on ${camName}`;
+  document.getElementById("mBody").innerHTML =
+    `<div style="color:#8b949e;font-size:13px">Asking the device...</div>`;
+  modal.classList.add("show");
+
+  let data;
+  try {
+    const r = await fetch(`/clips/${encodeURIComponent(camId)}`);
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (e) {
+    document.getElementById("mBody").innerHTML =
+      `<div style="color:#f85149;font-size:13px">Could not read the device: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  const clips = data.clips || [];
+  document.getElementById("mBody").innerHTML = `
+    <video id="mPlayer" controls playsinline style="display:none"></video>
+    <div style="font-size:12px;color:#6e7681;margin-bottom:8px">
+      ${clips.length} files, kept on the device itself. Marked ones are
+      movement or sound and are kept longer.
+    </div>
+    ${clips.length ? clips.map(c => `
+      <div class="clip">
+        <span>${esc(c.when)}</span>
+        ${c.keep ? `<span class="kp">EVENT</span>` : ""}
+        <span class="sp">
+          <span style="color:#6e7681;align-self:center">${c.size_mb} MB</span>
+          <button onclick="playClip('${esc(camId)}','${esc(c.file)}')">Play</button>
+          <a href="/clip/${encodeURIComponent(camId)}/${encodeURIComponent(c.file)}"
+             download>Save</a>
+        </span>
+      </div>`).join("") : `<div style="color:#8b949e">Nothing recorded yet.</div>`}
+  `;
+}
+
+function playClip(camId, file) {
+  const v = document.getElementById("mPlayer");
+  if (!v) return;
+  v.style.display = "";
+  v.src = `/clip/${encodeURIComponent(camId)}/${encodeURIComponent(file)}`;
+  v.play().catch(() => {});
+  v.scrollIntoView({ block: "nearest" });
+}
+
+function closeModal() {
+  const v = document.getElementById("mPlayer");
+  if (v) { v.pause(); v.src = ""; }
+  document.getElementById("modal").classList.remove("show");
+}
+
+/* ---------- render ---------- */
+function render() {
+  const grid = document.getElementById("grid");
+
+  if (!cams.length) {
+    grid.innerHTML = `<div class="empty">
+      <h2>No cameras connected yet</h2>
+      <p>Spare phone: tap <b>+ Phone</b> above, open that page on the phone
+         and press Start.<br>
+         Laptop or a camera on your home WiFi: run
+         <code>python agent/agent.py</code> on a machine on that network.</p>
+    </div>`;
+    renderEvents();
+    return;
+  }
+
+  grid.innerHTML = cams.map(c => {
+    const mode = modes[c.id] || (c.id === FOCUS ? "live" : "off");
+    if (!(c.id in modes)) modes[c.id] = mode;
+    if (mode !== "off" && !sockets[c.id]) openSocket(c.id, mode);
+
+    const lvl = Math.min(100, Math.round((c.audio_level || 0) * 300));
+    const hot = c.sound || (c.audio_level || 0) > 0.05;
+
+    const tags = [];
+    if (c.recording) tags.push(`<span class="tag rec">REC</span>`);
+    if (c.motion)    tags.push(`<span class="tag mot">MOVING</span>`);
+    if (c.sound)     tags.push(`<span class="tag snd">SOUND</span>`);
+    if (c.baby_mode) tags.push(`<span class="tag">BABY</span>`);
+    if (!c.armed)    tags.push(`<span class="tag">ALERTS OFF</span>`);
+
+    const screen = mode === "off"
+      ? `<div class="idle">Tap <b>Snap</b> or <b>Live</b> to look<br>
+          <small>nothing is sent while this is off</small></div>`
+      : `<img id="img-${c.id}" alt="${esc(c.name)}">`;
+
+    const pad = (mode !== "off" && c.ptz) ? `
+      <div class="pad">
+        <button></button>
+        <button onpointerdown="ptzStart('${c.id}','up')"
+                onpointerup="ptzStop('${c.id}')"
+                onpointerleave="ptzStop('${c.id}')">&#9650;</button>
+        <button></button>
+        <button onpointerdown="ptzStart('${c.id}','left')"
+                onpointerup="ptzStop('${c.id}')"
+                onpointerleave="ptzStop('${c.id}')">&#9664;</button>
+        <button class="mid" onclick="cmd('${c.id}','ptz',{action:'home'})">HOME</button>
+        <button onpointerdown="ptzStart('${c.id}','right')"
+                onpointerup="ptzStop('${c.id}')"
+                onpointerleave="ptzStop('${c.id}')">&#9654;</button>
+        <button></button>
+        <button onpointerdown="ptzStart('${c.id}','down')"
+                onpointerup="ptzStop('${c.id}')"
+                onpointerleave="ptzStop('${c.id}')">&#9660;</button>
+        <button></button>
+      </div>` : "";
+
+    // "Still for 23 min" is the quickest read on whether a baby is asleep.
+    const quiet = c.quiet_for_s;
+    const stillTxt = (quiet == null) ? "no movement data"
+      : (c.motion ? `<b class="moving">moving now</b>`
+                  : `still for <b>${dur(quiet)}</b>`);
+    const silentTxt = (c.silent_for_s == null) ? ""
+      : `<br>quiet for ${dur(c.silent_for_s)}`;
+
+    const lensSel = (c.lenses && c.lenses.length > 1) ? `
+      <div class="inline">
+        <label>Lens</label>
+        <select onchange="cmd('${c.id}','lens',{id:this.value})">
+          ${c.lenses.map(l => `<option value="${esc(l.id)}"
+            ${l.id === c.active_lens ? "selected" : ""}>${esc(l.label)}</option>`).join("")}
+        </select>
+      </div>` : "";
+
+    const zoomRow = (c.kind === "browser" || c.ptz) ? `
+      <div class="inline">
+        <label>Zoom</label>
+        <input type="range" min="1" max="4" step="0.1" value="${c.zoom || 1}"
+               onchange="cmd('${c.id}','zoom',{value:Number(this.value)})">
+      </div>` : "";
+
+    const presets = (c.ptz_presets && c.ptz_presets.length) ? `
+      <div class="btns">
+        ${c.ptz_presets.map(p => `<button
+           onclick="cmd('${c.id}','ptz',{action:'preset',preset:'${esc(p)}'})"
+           >${esc(p)}</button>`).join("")}
+      </div>` : "";
+
+    const stats = [];
+    if (c.battery != null) {
+      stats.push(`<span class="${c.battery < 20 && !c.charging ? "bad" : ""}">`
+        + `battery ${c.battery}%${c.charging ? " charging" : ""}</span>`);
+    }
+    if (c.disk_free_gb != null) stats.push(`<span>${c.disk_free_gb} GB free</span>`);
+    if (c.clips) stats.push(`<span>${c.clips} clips on device</span>`);
+    if (c.retention_hours) stats.push(`<span>${c.retention_hours}h kept</span>`);
+    stats.push(`<span>${c.kind === "browser" ? "phone" : "laptop / IP cam"}</span>`);
+
+    return `<div class="cam ${(c.motion || c.sound) ? "alert" : ""} ${c.online ? "" : "offline"}">
+      <div class="top">
+        <span class="dot ${c.online ? "on" : "off"}"></span>
+        <span class="nm">${esc(c.name)}</span>
+        <span class="still">${stillTxt}${silentTxt}</span>
+      </div>
+      <div class="screen">${screen}<div class="pill">${tags.join("")}</div>${pad}</div>
+      <div class="meter"><i class="${hot ? "hot" : ""}" style="width:${lvl}%"></i></div>
+      <div class="rows">
+        <div class="seg">
+          ${["off", "snapshot", "live", "hd"].map(m => `
+            <button class="${mode === m ? "sel" : ""}"
+                    onclick="setMode('${c.id}','${m}')">
+              ${({ off: "Off", snapshot: "Snap", live: "Live", hd: "HD" })[m]}
+            </button>`).join("")}
+        </div>
+        <div class="btns">
+          <button class="${listening[c.id] ? "active" : ""}"
+                  onclick="setListen('${c.id}',${!listening[c.id]})"
+                  ${c.has_audio ? "" : "disabled"}>
+            ${listening[c.id] ? "Listening" : "Listen"}</button>
+          <button class="${talkCam === c.id ? "talking" : ""}"
+                  onclick="toggleTalk('${c.id}')"
+                  ${c.has_speaker ? "" : "disabled"}>
+            ${talkCam === c.id ? "Talking - tap to end" : "Talk"}</button>
+        </div>
+        <div class="btns">
+          <button class="${c.recording ? "recon" : ""}"
+                  onclick="cmd('${c.id}','record',{on:${!c.recording}})">
+            ${c.recording ? "Stop rec" : "Record"}</button>
+          <button class="${c.baby_mode ? "active" : ""}"
+                  onclick="cmd('${c.id}','baby',{on:${!c.baby_mode}})">Baby</button>
+          <button class="${c.armed ? "active" : ""}"
+                  onclick="cmd('${c.id}','arm',{on:${!c.armed}})">Alerts</button>
+          <button onclick="openClips('${c.id}','${esc(c.name)}')">Clips</button>
+        </div>
+        ${lensSel}${zoomRow}${presets}
+        <div class="stats">${stats.join("")}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  renderEvents();
+}
+
+function renderEvents() {
+  const box = document.getElementById("events");
+  if (!events.length) {
+    box.innerHTML = `<div class="ev"><div class="txt"><div class="d">
+      Nothing yet. Movement, sounds and cameras going on or offline appear
+      here.</div></div></div>`;
+    return;
+  }
+  box.innerHTML = events.map(e => `
+    <div class="ev k-${esc(e.kind)}">
+      ${e.thumb ? `<img src="${e.thumb}" alt=""
+         onclick="window.open('${e.thumb}','_blank')">` : ""}
+      <div class="txt">
+        <div class="k">${esc(KIND_LABEL[e.kind] || e.kind)}</div>
+        <div class="d">${esc(e.camera_name)}${e.detail ? " - " + esc(e.detail) : ""}</div>
+      </div>
+      <div class="t">${esc(e.when)}</div>
+    </div>`).join("");
+}
+
+function dur(s) {
+  s = Number(s) || 0;
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 5400) return `${Math.round(s / 60)} min`;
+  return `${Math.round(s / 360) / 10} h`;
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
+// Stop sending video when the dashboard is hidden - it saves the phone's
+// battery and the hosting bandwidth.
+let hiddenModes = null;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hiddenModes = { ...modes };
+    Object.keys(modes).forEach(id => { if (modes[id] !== "off") setMode(id, "off"); });
+  } else if (hiddenModes) {
+    Object.entries(hiddenModes).forEach(([id, m]) => { if (m !== "off") setMode(id, m); });
+    hiddenModes = null;
+  }
+});
+
+connectDash();
+</script>
+</body>
+</html>

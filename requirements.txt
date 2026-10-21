@@ -1,5 +1,7 @@
-flask>=3.0.0
-opencv-python>=4.9.0
-
-# Optional - only needed if you turn on the Google Home / Chromecast alarm
-# PyChromecast>=14.0.0
+# CabinWatch server (this is what Railway installs).
+# The camera-side agent has its own list in agent/requirements.txt.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+jinja2>=3.1.4
+httpx>=0.27.0
+python-multipart>=0.0.9

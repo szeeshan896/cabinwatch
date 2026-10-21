@@ -1,0 +1,17 @@
+# CabinWatch agent - install on each machine that has a camera attached.
+#
+#   pip install -r agent/requirements.txt
+
+opencv-python>=4.9.0
+numpy>=1.24.0
+websocket-client>=1.7.0
+
+# Microphone and speaker, for baby-sound alerts and two-way talk.
+# Drop this line if a camera has no mic and you do not need to talk back.
+sounddevice>=0.4.6
+
+# Only needed for an ONVIF PTZ camera (most rotating IP cameras).
+# onvif-zeep>=0.2.12
+
+# Only needed for the "http" PTZ backend.
+# requests>=2.31.0

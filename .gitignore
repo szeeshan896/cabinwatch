@@ -1,10 +1,15 @@
-# Your private settings (real camera IPs, device names, network details).
-# This is where ALL your personal/sensitive details live - never committed.
+# Your private settings - real tokens, camera passwords, IP addresses.
+# These live only on your machines and are never committed.
 config.py
+agent/config.py
+.env
 
-# Recorded footage
-clips/*.mp4
-clips/*.avi
+# Recorded footage. Clips stay on the device that recorded them.
+clips/
+legacy/clips/
+*.mp4
+*.avi
+*.webm
 
 # Python
 __pycache__/

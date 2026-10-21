@@ -1,0 +1,5 @@
+flask>=3.0.0
+opencv-python>=4.9.0
+
+# Optional - only needed if you turn on the Google Home / Chromecast alarm
+# PyChromecast>=14.0.0
