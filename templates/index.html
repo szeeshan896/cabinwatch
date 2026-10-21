@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CabinWatch</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:#0b0e11;color:#e7edf3;padding:14px 12px 40px;
+  }
+  header{display:flex;align-items:baseline;justify-content:space-between;
+    margin-bottom:14px;flex-wrap:wrap;gap:6px;}
+  h1{font-size:18px;font-weight:700;letter-spacing:-0.01em;}
+  .clock{font-size:12px;color:#7d8b97;font-variant-numeric:tabular-nums;}
+
+  .grid{display:grid;gap:14px;grid-template-columns:1fr;}
+  @media(min-width:760px){.grid{grid-template-columns:repeat(2,1fr);}}
+
+  .cam{background:#141a20;border:1px solid #232d37;border-radius:14px;
+    overflow:hidden;}
+  .cam-head{display:flex;align-items:center;justify-content:space-between;
+    padding:11px 13px;gap:8px;}
+  .cam-name{font-size:14px;font-weight:600;}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;}
+  .badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    padding:3px 8px;border-radius:20px;}
+  .b-live{background:#12361f;color:#5ee08a;}
+  .b-off{background:#3a2020;color:#f08a8a;}
+  .b-motion{background:#3d3410;color:#ffd166;}
+  .b-rec{background:#3d1414;color:#ff6b6b;}
+
+  .shot{width:100%;display:block;background:#000;aspect-ratio:4/3;object-fit:contain;}
+
+  .controls{display:flex;gap:8px;padding:11px 13px;}
+  button{flex:1;padding:11px 8px;border-radius:9px;border:1px solid #2c3845;
+    background:#1b2430;color:#cdd9e3;font-size:12.5px;font-weight:600;
+    cursor:pointer;transition:.15s;font-family:inherit;}
+  button:active{transform:scale(.97);}
+  button.on{background:#1f4d33;border-color:#2e7d4f;color:#8ff0b5;}
+  button.rec-on{background:#4d1f1f;border-color:#7d2e2e;color:#ffadad;}
+
+  .clips{margin-top:22px;}
+  .clips h2{font-size:14px;font-weight:700;margin-bottom:10px;color:#cdd9e3;}
+  .clip{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:#141a20;border:1px solid #232d37;border-radius:10px;
+    padding:10px 12px;margin-bottom:7px;}
+  .clip a{color:#7fc4ff;text-decoration:none;font-size:12.5px;font-weight:600;
+    word-break:break-all;}
+  .clip .meta{font-size:11px;color:#7d8b97;white-space:nowrap;}
+  .empty{color:#7d8b97;font-size:12.5px;padding:10px 0;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CabinWatch</h1>
+  <div class="clock" id="clock">—</div>
+</header>
+
+<div class="grid" id="grid">
+  {% for c in cameras %}
+  <div class="cam" data-id="{{ c.id }}">
+    <div class="cam-head">
+      <div class="cam-name">{{ c.name }}</div>
+      <div class="badges" id="badges-{{ c.id }}"></div>
+    </div>
+    <img class="shot" src="/feed/{{ c.id }}" alt="{{ c.name }}">
+    <div class="controls">
+      <button id="auto-{{ c.id }}" onclick="toggle('{{ c.id }}','auto')">Auto-record</button>
+      <button id="manual-{{ c.id }}" onclick="toggle('{{ c.id }}','manual')">Record now</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="clips">
+  <h2>Saved clips</h2>
+  <div id="cliplist"><div class="empty">No clips yet.</div></div>
+</div>
+
+<script>
+function badge(text, cls){ return `<span class="badge ${cls}">${text}</span>`; }
+
+async function refresh(){
+  try{
+    const r = await fetch('/status');
+    const d = await r.json();
+    document.getElementById('clock').textContent = d.server_time;
+
+    d.cameras.forEach(c => {
+      const box = document.getElementById('badges-' + c.id);
+      if(box){
+        let html = '';
+        html += c.status === 'live'
+          ? badge('live','b-live')
+          : badge(c.status,'b-off');
+        if(c.motion)    html += badge('motion','b-motion');
+        if(c.recording) html += badge('rec','b-rec');
+        box.innerHTML = html;
+      }
+      const a = document.getElementById('auto-' + c.id);
+      if(a){
+        a.classList.toggle('on', c.auto_record);
+        a.textContent = c.auto_record ? 'Auto-record: ON' : 'Auto-record: OFF';
+      }
+      const m = document.getElementById('manual-' + c.id);
+      if(m){
+        m.classList.toggle('rec-on', c.manual_record);
+        m.textContent = c.manual_record ? 'Recording — stop' : 'Record now';
+      }
+    });
+
+    const list = document.getElementById('cliplist');
+    if(!d.clips.length){
+      list.innerHTML = '<div class="empty">No clips yet.</div>';
+    } else {
+      list.innerHTML = d.clips.map(c => `
+        <div class="clip">
+          <a href="/clips/${c.file}" target="_blank">${c.file}</a>
+          <span class="meta">${c.when} · ${c.size_mb} MB</span>
+        </div>`).join('');
+    }
+  }catch(e){ /* keep polling */ }
+}
+
+async function toggle(id, what){
+  try{ await fetch(`/toggle/${id}/${what}`, {method:'POST'}); refresh(); }
+  catch(e){}
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+
+</body>
+</html>

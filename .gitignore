@@ -1,0 +1,21 @@
+# Your private settings (real camera IPs, device names, network details).
+# This is where ALL your personal/sensitive details live - never committed.
+config.py
+
+# Recorded footage
+clips/*.mp4
+clips/*.avi
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
