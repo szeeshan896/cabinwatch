@@ -52,6 +52,7 @@ internet.
 | | |
 |---|---|
 | **Live view** | Off / Snap / Live / HD per camera. Nothing is sent while it is Off. |
+| **Two ways to use a phone** | A browser page with nothing to install, or a native Android app that runs in the background with the screen off. |
 | **Push alerts** | On your phone, with a picture of what happened. Free, via ntfy. |
 | **Baby sounds** | Tells a cry apart from a fan, and a thud apart from both. |
 | **"Still for 23 min"** | One glance tells you whether he is asleep or moving. |
@@ -128,7 +129,22 @@ when your phone is on silent. Tapping the notification opens that camera.
 
 ## Part 3 — A spare phone as a camera
 
-This needs no app install and works on Android and iPhone.
+There are two ways, and they are both worth having.
+
+| | Browser page | Android app |
+|---|---|---|
+| To set up | nothing to install | install an APK |
+| Works on | Android and iPhone | Android only |
+| App in the background | ❌ camera stops | ✅ keeps going |
+| Screen off | ❌ | ✅ |
+| After the phone restarts | ❌ open it again | ✅ comes back by itself |
+| Ready in | about 30 seconds | a few minutes |
+
+Use the **browser page** when you want a camera right now, or on an iPhone.
+Use the **app** for the cameras you actually depend on — a child's room
+overnight, or a cabin you are not in.
+
+### 3a. The browser page — nothing to install
 
 1. On your dashboard, press **+ Phone** (or go to `/camera`).
 2. Open that same page **on the spare phone** and log in.
@@ -140,13 +156,65 @@ This needs no app install and works on Android and iPhone.
    the phone is not glowing in a dark room. Tap to bring it back.
 
 Leave that browser tab open and in the foreground. A phone browser stops the
-camera if you switch apps, so give the phone this one job.
+camera if you switch apps, so give the phone this one job — or use the app
+below, which does not have that problem.
 
-A phone's own storage is the limit for how far back it can record, so for a room
-you care most about, a laptop is the stronger camera — more space, better
-microphone, and it keeps running with the lid closed.
+### 3b. The Android app — runs in the background
 
----
+Spare Android phones are better served by the app. It uses a foreground
+service with the camera and microphone types, which is what lets Android keep
+the camera running while the app is in the background and the screen is off.
+
+**Get the APK.** You do not need Android Studio. Every push builds one:
+
+1. Go to the **Actions** tab of your GitHub repository.
+2. Open the newest **Build Android APK** run.
+3. Download the **cabinwatch-camera-apk** artifact and unzip it.
+4. Put `app-debug.apk` on the phone and open it. Android will ask you to
+   allow installing from outside the Play Store — that is expected for an app
+   you built yourself.
+
+If you would rather build it locally, you need Android Studio or the command
+line tools, then:
+
+```bash
+cd android
+./gradlew assembleDebug
+# app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Set it up on the phone.**
+
+1. Open CabinWatch and fill in your server address and the same `AGENT_TOKEN`.
+2. Name the camera, pick which lens, and set how long to keep recordings and
+   how much storage the app may use.
+3. Turn on **Watching a baby** if it should alert on sounds as well as
+   movement.
+4. Press **Start camera**, and allow camera, microphone and notifications.
+5. Press **Stop Android sleeping this app** when it offers. Do not skip this —
+   without it most phones put the app to sleep after a few hours and recording
+   quietly stops.
+6. Close the app. A small notification stays in the shade while it runs; the
+   camera carries on with the screen off.
+
+**Sound in the saved files** is a switch, and it is off on purpose. Android
+will not reliably hand the microphone to the recorder and to the alert
+detector at the same time, so turning it on can cost you the crying alerts and
+the Listen button. Video-only recordings keep everything working, and for
+knowing what happened the picture is what matters.
+
+If a phone cannot record and stream at the same time — a few older ones
+cannot — the app falls back to watching only and says so on the dashboard,
+rather than looking healthy while saving nothing.
+
+### What about an iPhone as a camera?
+
+It cannot be a 24×7 camera, and that is Apple's rule rather than a gap here:
+iOS stops camera capture as soon as an app goes to the background, and there
+is no permission that changes it. An iPhone can be a camera while the page is
+open in front of you, which is useful for a quick look, but for anything
+unattended use an Android phone or a laptop. An iPhone makes a perfectly good
+*viewer*, which is the job most people want it for anyway.
 
 ## Part 4 — A laptop as a camera
 

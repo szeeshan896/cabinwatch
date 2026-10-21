@@ -27,8 +27,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up the Android SDK
-        uses: android-actions/setup-android@v3
+      # The ubuntu runner already ships the Android SDK, so there is nothing
+      # to install. Just accept the licences so the Gradle plugin may fetch
+      # any platform or build-tools version it still needs.
+      - name: Prepare the Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || echo "(no platforms yet)"
+          SDKMGR=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          fi
 
       - name: Build
         working-directory: android

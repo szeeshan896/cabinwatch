@@ -24,13 +24,24 @@ The order matters — each step needs the one before it.
 
 Pick whichever you have spare. A laptop hears better; a phone hides better.
 
-**Phone**
+**Android phone, using the app (best for a room you depend on)**
+- [ ] GitHub → **Actions** → newest *Build Android APK* run
+- [ ] Download the **cabinwatch-camera-apk** artifact, unzip it
+- [ ] Put `app-debug.apk` on the phone, open it, allow the install
+- [ ] Fill in the server address and the same `AGENT_TOKEN`
+- [ ] Name it, pick the lens, turn on **Watching a baby**
+- [ ] **Start camera**, allow camera + microphone + notifications
+- [ ] Press **Stop Android sleeping this app** — do not skip this one
+- [ ] Close the app; check the notification stays and the dashboard shows green
+- [ ] Restart the phone once and confirm it comes back on its own
+
+**Any phone, using the browser page (nothing to install)**
 - [ ] Dashboard → **+ Phone**, open that page on the spare phone, log in
 - [ ] Name it, pick the lens, choose "Baby room", press **Start camera**
 - [ ] Allow camera + microphone
 - [ ] Plug it in to charge, place it facing the bed
 - [ ] Press **Dim screen** so it is not glowing at night
-- [ ] Leave the tab open and in the foreground
+- [ ] Leave the tab open and in the foreground (this one needs it)
 
 **Laptop**
 - [ ] `pip install -r agent/requirements.txt`
