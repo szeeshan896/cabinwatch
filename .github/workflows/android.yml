@@ -1,0 +1,49 @@
+name: Build Android APK
+
+# Builds the camera app and leaves an installable APK attached to the run, so
+# you can put it on a spare phone without installing Android Studio.
+on:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Report the APK size
+        working-directory: android
+        run: ls -lh app/build/outputs/apk/debug/
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cabinwatch-camera-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 90

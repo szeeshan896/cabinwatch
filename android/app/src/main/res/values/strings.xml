@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CabinWatch</string>
+    <string name="tagline">Turn this phone into a camera. It keeps recording
+        with the screen off and after a restart.</string>
+
+    <string name="label_server">Your server address</string>
+    <string name="hint_server">https://your-app.up.railway.app</string>
+    <string name="label_token">Camera token</string>
+    <string name="hint_token">the AGENT_TOKEN from your server</string>
+    <string name="label_name">Name this camera</string>
+    <string name="hint_name">Baby Room</string>
+    <string name="label_lens">Which camera to use</string>
+    <string name="label_retention">Keep recordings for</string>
+    <string name="label_storage">Storage this app may use</string>
+
+    <string name="sw_baby">Watching a baby (alert me on sounds too)</string>
+    <string name="sw_record_audio">Include sound in saved recordings</string>
+    <string name="note_record_audio">Leave this off unless you need sound in the
+        saved files. Android will not reliably give the microphone to the
+        recorder and to the alerts at the same time, so turning it on can cost
+        you the crying alerts and the Listen button.</string>
+    <string name="sw_boot">Start again after the phone restarts</string>
+
+    <string name="status_idle">Not running.</string>
+    <string name="btn_start">Start camera</string>
+    <string name="btn_stop">Stop camera</string>
+    <string name="btn_battery">Stop Android sleeping this app</string>
+
+    <string name="footer_help">Recordings stay on this phone. Video is only sent
+        while you are watching from the dashboard, so this uses almost no data
+        when nothing is happening. Keep the phone on charge.</string>
+</resources>

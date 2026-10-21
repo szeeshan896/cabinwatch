@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="18dp"
+            android:text="@string/tagline"
+            android:textSize="13sp" />
+
+        <TextView style="@style/Label" android:text="@string/label_server" />
+        <EditText
+            android:id="@+id/etServer"
+            style="@style/Field"
+            android:hint="@string/hint_server"
+            android:inputType="textUri"
+            android:autofillHints="" />
+
+        <TextView style="@style/Label" android:text="@string/label_token" />
+        <EditText
+            android:id="@+id/etToken"
+            style="@style/Field"
+            android:hint="@string/hint_token"
+            android:inputType="textPassword"
+            android:autofillHints="" />
+
+        <TextView style="@style/Label" android:text="@string/label_name" />
+        <EditText
+            android:id="@+id/etName"
+            style="@style/Field"
+            android:hint="@string/hint_name"
+            android:inputType="textCapWords"
+            android:autofillHints="" />
+
+        <TextView style="@style/Label" android:text="@string/label_lens" />
+        <Spinner
+            android:id="@+id/spLens"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp" />
+        <TextView
+            android:id="@+id/tvLensNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:textSize="12sp"
+            android:text="" />
+
+        <TextView style="@style/Label" android:text="@string/label_retention" />
+        <Spinner
+            android:id="@+id/spRetention"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp" />
+
+        <TextView style="@style/Label" android:text="@string/label_storage" />
+        <Spinner
+            android:id="@+id/spStorage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/swBaby"
+            style="@style/Toggle"
+            android:text="@string/sw_baby" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/swRecordAudio"
+            style="@style/Toggle"
+            android:text="@string/sw_record_audio" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:textSize="12sp"
+            android:text="@string/note_record_audio" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/swBoot"
+            style="@style/Toggle"
+            android:text="@string/sw_boot" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="14dp"
+            android:background="#33000000" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="@string/status_idle" />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_start" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_stop" />
+
+        <TextView
+            android:id="@+id/tvBatteryNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:textSize="12sp"
+            android:text="" />
+
+        <Button
+            android:id="@+id/btnBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/btn_battery" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:textSize="12sp"
+            android:text="@string/footer_help" />
+
+    </LinearLayout>
+</ScrollView>
