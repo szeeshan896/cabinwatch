@@ -853,7 +853,8 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("charging", isCharging())
             put("lenses", lensLabels)
             put("active_lens", settings.lensIndex.toString())
-            put("zoom", camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1.0)
+            put("zoom", (camera?.cameraInfo?.zoomState?.value?.zoomRatio
+                ?: 1.0f).toDouble())
             put("has_audio", hasMicPermission())
             put("has_speaker", true)
             put("ptz", false)

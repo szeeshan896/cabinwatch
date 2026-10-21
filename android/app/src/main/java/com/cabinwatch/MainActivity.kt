@@ -104,13 +104,13 @@ class MainActivity : AppCompatActivity() {
             return false
         }
 
-        val renamed = settings.cameraName != name
         settings.serverUrl = server
         settings.token = token
         settings.cameraName = name
-        // A rename should show up as the same camera, not a second one, so the
-        // id is only regenerated when there was none.
-        if (renamed && settings.cameraId.isEmpty()) settings.cameraId = ""
+        // Reading cameraId mints one on first use and then keeps it, so a
+        // rename shows up as the same camera on the dashboard rather than a
+        // second one appearing.
+        settings.cameraId
         settings.babyMode = b.swBaby.isChecked
         settings.recordAudio = b.swRecordAudio.isChecked
         settings.startOnBoot = b.swBoot.isChecked

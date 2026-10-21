@@ -103,7 +103,7 @@ class ClipStore(context: Context, private val settings: Settings) {
         if (name.isNullOrEmpty()) return null
         if (name.contains('/') || name.contains('\\') || name.contains("..")) return null
         val f = File(dir, name)
-        if (f.canonicalPath != File(dir, name).canonicalPath) return null
+        // Refuse anything that resolves outside our own folder.
         if (!f.canonicalPath.startsWith(dir.canonicalPath + File.separator)) return null
         return if (f.isFile) f else null
     }
