@@ -56,8 +56,15 @@ except ImportError:
 
 try:
     import sounddevice as sd
-except ImportError:
+except Exception as _audio_error:
+    # Not just ImportError: on a machine with no working audio drivers the
+    # import itself raises while loading PortAudio. A camera with no sound is
+    # still a useful camera, so carry on without it rather than refusing to
+    # start at all.
     sd = None
+    print(f"[audio] no microphone or speaker support: {_audio_error}")
+    print("[audio] movement detection and live video still work; sound "
+          "alerts and talking back do not.")
 
 # Mirrors server/protocol.py.
 BIN_VIDEO, BIN_AUDIO, BIN_CLIP = 0x01, 0x02, 0x03
@@ -829,8 +836,10 @@ def main():
             for i, label in mics:
                 print(f"  audio_device: {i}    {label}")
         elif sd is None:
-            print("\nNo microphone support - the sounddevice package is "
-                  "not installed.")
+            print("\nNo microphone support on this machine - see the [audio] "
+                  "line above for why.")
+        else:
+            print("\nNo microphones found.")
         return
 
     cfg = load_config(force_setup=args.setup)

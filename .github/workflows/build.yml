@@ -91,7 +91,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r agent/requirements.txt
-          pip install pyinstaller==6.10.0
+          # Latest, not pinned: an older PyInstaller ships hooks that miss
+          # part of numpy 2.x, and the executable then dies on startup with
+          # "No module named numpy._core._exceptions".
+          pip install --upgrade pyinstaller
+          python -c "import PyInstaller, numpy, cv2; print('pyinstaller', PyInstaller.__version__, '| numpy', numpy.__version__, '| cv2', cv2.__version__)"
 
       # One file, with a console window. The console earns its place here: it
       # is where the first-run questions are asked and where the running
@@ -106,13 +110,20 @@ jobs:
           --hidden-import detect
           --hidden-import setup_wizard
           --hidden-import config_example
+          --collect-all numpy
+          --collect-all cv2
           --collect-all sounddevice
           agent/agent.py
 
+      # --help alone only proves argparse survived. --list-cameras imports
+      # OpenCV, opens a capture and queries the audio devices, which is where
+      # a bad bundle actually shows itself.
       - name: Check it actually runs
         run: |
           dir dist
           .\dist\CabinWatch-Agent.exe --help
+          .\dist\CabinWatch-Agent.exe --list-cameras
+          Write-Host "The executable starts and can reach OpenCV and audio."
 
       - name: Upload
         uses: actions/upload-artifact@v4
