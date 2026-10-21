@@ -53,6 +53,7 @@ internet.
 |---|---|
 | **Live view** | Off / Snap / Live / HD per camera. Nothing is sent while it is Off. |
 | **Two ways to use a phone** | A browser page with nothing to install, or a native Android app that runs in the background with the screen off. |
+| **A laptop needs no setup either** | A Windows `.exe` that asks a handful of questions the first time. No Python, no editing files. |
 | **Push alerts** | On your phone, with a picture of what happened. Free, via ntfy. |
 | **Baby sounds** | Tells a cry apart from a fan, and a thud apart from both. |
 | **"Still for 23 min"** | One glance tells you whether he is asleep or moving. |
@@ -218,7 +219,45 @@ unattended use an Android phone or a laptop. An iPhone makes a perfectly good
 
 ## Part 4 — A laptop as a camera
 
-Needs Python 3.10 or newer on that laptop.
+A laptop is the strongest camera of the three: more storage than a phone, a
+better microphone, and it keeps running with the lid closed. For a room where
+hearing matters — a child's room — it is the one to use.
+
+Two ways again: a ready-made `.exe` that needs nothing installed, or Python if
+you would rather have the full config file.
+
+### 4a. The .exe — nothing to install
+
+**Get it.** Same place as the APK — every push builds one:
+
+1. **Actions** tab of your GitHub repository.
+2. Newest **Build apps** run.
+3. Download the **cabinwatch-laptop-agent-exe** artifact and unzip it.
+
+**Run it.** Double-click `CabinWatch-Agent.exe`. The first time, it asks:
+
+- your server address and the same `AGENT_TOKEN`
+- which camera to use — it lists the ones it can actually open
+- what it is watching, a baby or a cabin, which sets the sensible defaults
+  for each
+- which microphone to listen on
+- how long to keep recordings and how much disk it may use
+
+Answers are saved to `cabinwatch.json` next to the `.exe`, and recordings go
+in a `clips` folder next to it. After that it starts straight away. To change
+something later, edit that file, or run `CabinWatch-Agent.exe --setup` to be
+asked again.
+
+Keep the console window open — that is the program running. It prints what it
+is doing, which is also where you look first if something is wrong.
+
+### 4b. With Python — for more than one camera
+
+Use this when you want several cameras on one machine, an ONVIF camera, or
+ignore-regions: `config.py` can express far more than the questions can, and
+it wins over `cabinwatch.json` if both exist.
+
+Needs Python 3.10 or newer.
 
 ```bash
 pip install -r agent/requirements.txt
@@ -242,10 +281,8 @@ On Windows, double-click **`agent\run.bat`** instead — it installs what it nee
 and restarts the agent if it ever stops. On Linux or a Raspberry Pi use
 `agent/run.sh`.
 
-`agent/config.py` is gitignored, so your token and camera passwords never leave
-that machine.
-
----
+Neither `agent/config.py` nor `cabinwatch.json` is committed, so your token and
+camera passwords never leave that machine.
 
 ## Part 5 — A rotating (PTZ) camera
 

@@ -32,3 +32,12 @@ android/app/build/
 android/local.properties
 *.apk
 *.aab
+
+# Answers from the agent's first-run setup (server address and token)
+cabinwatch.json
+agent/cabinwatch.json
+
+# PyInstaller output
+build/
+dist/
+*.spec

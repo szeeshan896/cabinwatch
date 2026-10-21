@@ -43,7 +43,14 @@ Pick whichever you have spare. A laptop hears better; a phone hides better.
 - [ ] Press **Dim screen** so it is not glowing at night
 - [ ] Leave the tab open and in the foreground (this one needs it)
 
-**Laptop**
+**Laptop, using the .exe (nothing to install)**
+- [ ] GitHub → **Actions** → newest *Build apps* run
+- [ ] Download the **cabinwatch-laptop-agent-exe** artifact, unzip it
+- [ ] Double-click `CabinWatch-Agent.exe` and answer the questions
+- [ ] Leave the console window open — that is the program running
+- [ ] Later changes: edit `cabinwatch.json` beside it, or run with `--setup`
+
+**Laptop, with Python (needed for several cameras or an ONVIF camera)**
 - [ ] `pip install -r agent/requirements.txt`
 - [ ] `cp agent/config_example.py agent/config.py`
 - [ ] `python agent/agent.py --list-cameras` to find the camera and mic numbers

@@ -1,0 +1,185 @@
+name: Build apps
+
+# Builds the two things you install on a device:
+#   - the Android camera app  (APK)
+#   - the laptop camera agent (Windows .exe, no Python needed)
+#
+# Both are attached to the run as artifacts. Publishing a release with plain
+# download links is deliberate, not automatic: run this workflow by hand from
+# the Actions tab and tick "publish". That way nothing is ever put out
+# publicly without somebody asking for it.
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'agent/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'agent/**'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a release with plain download links'
+        type: boolean
+        default: false
+
+jobs:
+  # -------------------------------------------------------------------------
+  apk:
+    name: Android camera app
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # The ubuntu runner already ships the Android SDK, so there is nothing
+      # to install. Just accept the licences so the Gradle plugin may fetch
+      # any platform or build-tools version it still needs.
+      - name: Prepare the Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || echo "(no platforms yet)"
+          SDKMGR=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          fi
+
+      - name: Build
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename and report
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk CabinWatch-camera.apk
+          ls -lh CabinWatch-camera.apk
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: cabinwatch-camera-apk
+          path: CabinWatch-camera.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  exe:
+    name: Laptop agent (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install what the agent needs
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt
+          pip install pyinstaller==6.10.0
+
+      # One file, with a console window. The console earns its place here: it
+      # is where the first-run questions are asked and where the running
+      # status is printed.
+      - name: Build the executable
+        run: >
+          pyinstaller --onefile --console
+          --name CabinWatch-Agent
+          --paths agent
+          --hidden-import ptz
+          --hidden-import recorder
+          --hidden-import detect
+          --hidden-import setup_wizard
+          --hidden-import config_example
+          --collect-all sounddevice
+          agent/agent.py
+
+      - name: Check it actually runs
+        run: |
+          dir dist
+          .\dist\CabinWatch-Agent.exe --help
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: cabinwatch-laptop-agent-exe
+          path: dist/CabinWatch-Agent.exe
+          if-no-files-found: error
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  release:
+    name: Publish download links
+    # Only ever on a deliberate run with the box ticked.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: [apk, exe]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cabinwatch-camera-apk
+          path: out
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cabinwatch-laptop-agent-exe
+          path: out
+
+      - name: Attach both to the "latest-build" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: latest-build
+        run: |
+          ls -lh out
+          cat > notes.md <<'EOF'
+          Ready-to-install builds of the two camera apps. They are replaced
+          here whenever this is published again, so these links always point
+          at the newest version.
+
+          **Spare Android phone** — download `CabinWatch-camera.apk` on the
+          phone and open it. Android will ask you to allow installing from
+          outside the Play Store; that is expected for an app you built
+          yourself.
+
+          **Laptop** — download `CabinWatch-Agent.exe` on the laptop and run
+          it. It asks for your server address and token the first time, finds
+          the cameras on the machine, and saves the answers next to itself.
+          No Python needed.
+
+          Neither file contains your server address or your token. You type
+          those in once per device and they stay on that device.
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" out/* \
+              --title "CabinWatch apps (latest build)" \
+              --notes-file notes.md \
+              --prerelease
+          fi
+          echo "---------------------------------------------"
+          echo "Download links:"
+          echo "  https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/CabinWatch-camera.apk"
+          echo "  https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/CabinWatch-Agent.exe"
+          echo "---------------------------------------------"

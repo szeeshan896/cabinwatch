@@ -45,6 +45,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ptz as ptz_mod
+import setup_wizard
 from recorder import Recorder
 from detect import MotionDetector, PersonDetector, SoundDetector
 
@@ -67,18 +68,44 @@ AUDIO_BLOCK = 1024
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-def load_config():
+def load_config(force_setup=False):
+    """Find the settings, or ask for them.
+
+    Order of preference:
+      1. agent/config.py        - hand-written, wins because it can express
+                                  far more than the questions can (several
+                                  cameras, ONVIF, ignore regions)
+      2. cabinwatch.json        - written by the first-run questions, and what
+                                  the standalone .exe uses
+      3. ask                    - when there is a console to ask on
+      4. the example values     - last resort, so --list-cameras still works
+    """
     here = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, here)
+    for path in (here, setup_wizard.base_dir()):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+    if force_setup:
+        return setup_wizard.run_wizard(probe_cameras, list_microphones)
+
     try:
         import config as cfg
         return cfg
     except ModuleNotFoundError:
-        import config_example as cfg
-        print("[config] No agent/config.py found - using the example values.")
-        print("[config] Copy agent/config_example.py to agent/config.py and "
-              "put your server URL and token in it.")
-        return cfg
+        pass
+
+    saved = setup_wizard.load_json_config()
+    if saved is not None:
+        return saved
+
+    if setup_wizard.can_ask():
+        return setup_wizard.run_wizard(probe_cameras, list_microphones)
+
+    import config_example as cfg
+    print("[config] No settings found - using the example values.")
+    print("[config] Run this in a terminal to be asked for them, or copy "
+          "agent/config_example.py to agent/config.py and edit it.")
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +793,17 @@ def probe_cameras(limit=6):
     return found
 
 
+def list_microphones():
+    """[(index, name)] for every input device, or [] if audio is unavailable."""
+    if sd is None:
+        return []
+    try:
+        return [(i, d["name"]) for i, d in enumerate(sd.query_devices())
+                if d.get("max_input_channels", 0) > 0]
+    except Exception:
+        return []
+
+
 def main():
     ap = argparse.ArgumentParser(description="CabinWatch camera agent")
     ap.add_argument("--only", action="append", default=None,
@@ -773,6 +811,9 @@ def main():
                          "(can be given more than once)")
     ap.add_argument("--list-cameras", action="store_true",
                     help="show which cameras this machine can open, then exit")
+    ap.add_argument("--setup", action="store_true",
+                    help="ask the setup questions again and overwrite "
+                         "cabinwatch.json")
     args = ap.parse_args()
 
     if args.list_cameras:
@@ -782,21 +823,30 @@ def main():
             print("  none - is another program already using the camera?")
         for i, w, h in found:
             print(f'  source: {i}    {w}x{h}')
-        if sd is not None:
+        mics = list_microphones()
+        if mics:
             print("\nMicrophones:")
-            for i, d in enumerate(sd.query_devices()):
-                if d.get("max_input_channels", 0) > 0:
-                    print(f'  audio_device: {i}    {d["name"]}')
+            for i, label in mics:
+                print(f"  audio_device: {i}    {label}")
+        elif sd is None:
+            print("\nNo microphone support - the sounddevice package is "
+                  "not installed.")
         return
 
-    cfg = load_config()
+    cfg = load_config(force_setup=args.setup)
+    if cfg is None:
+        sys.exit("Setup was not completed, so there is nothing to run.")
 
+    where = ("cabinwatch.json" if isinstance(cfg, setup_wizard.JsonConfig)
+             else "agent/config.py")
     if not getattr(cfg, "SERVER_URL", "") or "YOUR-APP" in cfg.SERVER_URL:
-        sys.exit("Set SERVER_URL in agent/config.py to your Railway URL, "
-                 "for example https://cabinwatch-production.up.railway.app")
+        sys.exit(f"Set SERVER_URL in {where} to your server address, for "
+                 f"example https://cabinwatch-production.up.railway.app\n"
+                 f"Or run with --setup to be asked again.")
     if not getattr(cfg, "AGENT_TOKEN", ""):
-        sys.exit("Set AGENT_TOKEN in agent/config.py to the same value as the "
-                 "AGENT_TOKEN variable on the server.")
+        sys.exit(f"Set AGENT_TOKEN in {where} to the same value as the "
+                 f"AGENT_TOKEN variable on the server.\n"
+                 f"Or run with --setup to be asked again.")
 
     os.makedirs(cfg.CLIPS_DIR, exist_ok=True)
 
