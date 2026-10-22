@@ -405,9 +405,17 @@ class CameraSession:
                     self.talk_queue.queue.clear()
 
         elif t == "record":
-            self.rec.manual = bool(m.get("on"))
-            if self.rec.manual:
+            on = bool(m.get("on"))
+            self.rec.paused = not on
+            if on:
+                # Resuming also forces a clip for cameras that normally only
+                # record on events, so the button always does something.
+                self.rec.manual = not self.rec.always_record
                 self.rec.mark_event()
+                print(f"[{self.cam_id}] recording resumed")
+            else:
+                self.rec.manual = False
+                print(f"[{self.cam_id}] recording paused")
             self.push_state()
 
         elif t == "baby_mode":
@@ -843,6 +851,7 @@ class CameraSession:
             "name": self.name,
             "status": self.status,
             "recording": self.rec.recording,
+            "paused": self.rec.paused,
             "motion": self.motion_on,
             "sound": self.sound.loud,
             "audio_level": round(self.sound.level, 4),

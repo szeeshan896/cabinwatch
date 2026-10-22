@@ -55,6 +55,7 @@ class Camera:
         self.state = {
             "status": "starting",
             "recording": False,
+            "paused": False,
             "motion": False,
             "sound": False,
             "audio_level": 0.0,

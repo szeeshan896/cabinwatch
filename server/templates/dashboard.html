@@ -70,6 +70,7 @@
     border-radius: 20px; background: #0d1117cc; border: 1px solid #30363d;
   }
   .tag.rec { background: #da3633; border-color: #f85149; color: #fff; }
+  .tag.pause { background: #6e7681; border-color: #8b949e; color: #fff; }
   .tag.mot { background: #9e6a03; border-color: #d29922; color: #fff; }
   .tag.snd { background: #1f6feb; border-color: #58a6ff; color: #fff; }
 
@@ -225,6 +226,11 @@ const urls = {};         // camId -> current object URL
 let cams = [], events = [];
 let talkCam = null, talkCtx = null, talkNode = null, talkStream = null;
 let playCtx = null, playAt = 0;
+
+const KIND_LABEL_DEVICE = {
+  browser: "phone (browser)", android: "phone (app)",
+  agent: "laptop / IP cam",
+};
 
 const KIND_LABEL = {
   motion: "Movement", sound: "Sound", cry: "Baby awake",
@@ -490,151 +496,319 @@ function closeModal() {
   document.getElementById("modal").classList.remove("show");
 }
 
-/* ---------- render ---------- */
+/* ---------- render ----------
+   Built once per camera, then updated in place. Rebuilding the markup on
+   every status tick looked fine until you tried to use it: the <img> was
+   replaced two or three times a second so the picture flickered, and the
+   lens dropdown was destroyed under your finger the moment you opened it.
+   Nothing here may replace an element the viewer might be interacting with.
+*/
+const cardEls = {};          // camId -> card element
+let eventSig = "";
+
+/* What you just asked for, while the camera is still catching up.
+   Switching a lens takes a moment, and until it lands the camera keeps
+   reporting the old one - so without this the dropdown snaps back a second
+   after you choose, which reads as "it refused me". Your choice is held
+   until the camera confirms it, or until it is clearly not coming. */
+const pending = {};          // camId -> {field: {value, at}}
+
+function setPending(camId, field, value) {
+  (pending[camId] = pending[camId] || {})[field] = {value, at: Date.now()};
+}
+
+function heldValue(camId, field, reported) {
+  const p = (pending[camId] || {})[field];
+  if (!p) return reported;
+  if (String(p.value) === String(reported)) {      // the camera agreed
+    delete pending[camId][field];
+    return reported;
+  }
+  if (Date.now() - p.at > 15000) {                 // it never happened
+    delete pending[camId][field];
+    return reported;
+  }
+  return p.value;
+}
+
 function render() {
   const grid = document.getElementById("grid");
 
   if (!cams.length) {
-    grid.innerHTML = `<div class="empty">
-      <h2>No cameras connected yet</h2>
-      <p>Spare phone: tap <b>+ Phone</b> above, open that page on the phone
-         and press Start.<br>
-         Laptop or a camera on your home WiFi: run
-         <code>python agent/agent.py</code> on a machine on that network.</p>
-    </div>`;
+    if (grid.dataset.state !== "empty") {
+      grid.dataset.state = "empty";
+      grid.innerHTML = `<div class="empty">
+        <h2>No cameras connected yet</h2>
+        <p>Spare phone: tap <b>+ Phone</b> above, open that page on the phone
+           and press Start.<br>
+           Laptop or a camera on your home WiFi: run
+           <code>python agent/agent.py</code> on a machine on that network.</p>
+      </div>`;
+      Object.keys(cardEls).forEach(k => delete cardEls[k]);
+    }
     renderEvents();
     return;
   }
 
-  grid.innerHTML = cams.map(c => {
-    const mode = modes[c.id] || (c.id === FOCUS ? "live" : "off");
-    if (!(c.id in modes)) modes[c.id] = mode;
-    if (mode !== "off" && !sockets[c.id]) openSocket(c.id, mode);
+  if (grid.dataset.state === "empty") {
+    grid.innerHTML = "";
+    grid.dataset.state = "cards";
+  }
 
-    const lvl = Math.min(100, Math.round((c.audio_level || 0) * 300));
-    const hot = c.sound || (c.audio_level || 0) > 0.05;
-
-    const tags = [];
-    if (c.recording) tags.push(`<span class="tag rec">REC</span>`);
-    if (c.motion)    tags.push(`<span class="tag mot">MOVING</span>`);
-    if (c.sound)     tags.push(`<span class="tag snd">SOUND</span>`);
-    if (c.baby_mode) tags.push(`<span class="tag">BABY</span>`);
-    if (!c.armed)    tags.push(`<span class="tag">ALERTS OFF</span>`);
-
-    const screen = mode === "off"
-      ? `<div class="idle">Tap <b>Snap</b> or <b>Live</b> to look<br>
-          <small>nothing is sent while this is off</small></div>`
-      : `<img id="img-${c.id}" alt="${esc(c.name)}">`;
-
-    const pad = (mode !== "off" && c.ptz) ? `
-      <div class="pad">
-        <i></i>
-        <button onpointerdown="ptzStart('${c.id}','up')"
-                onpointerup="ptzStop('${c.id}')"
-                onpointerleave="ptzStop('${c.id}')">&#9650;</button>
-        <i></i>
-        <button onpointerdown="ptzStart('${c.id}','left')"
-                onpointerup="ptzStop('${c.id}')"
-                onpointerleave="ptzStop('${c.id}')">&#9664;</button>
-        <button class="mid" onclick="cmd('${c.id}','ptz',{action:'home'})">HOME</button>
-        <button onpointerdown="ptzStart('${c.id}','right')"
-                onpointerup="ptzStop('${c.id}')"
-                onpointerleave="ptzStop('${c.id}')">&#9654;</button>
-        <i></i>
-        <button onpointerdown="ptzStart('${c.id}','down')"
-                onpointerup="ptzStop('${c.id}')"
-                onpointerleave="ptzStop('${c.id}')">&#9660;</button>
-        <i></i>
-      </div>` : "";
-
-    // "Still for 23 min" is the quickest read on whether a baby is asleep.
-    const quiet = c.quiet_for_s;
-    const stillTxt = (quiet == null) ? "no movement data"
-      : (c.motion ? `<b class="moving">moving now</b>`
-                  : `still for <b>${dur(quiet)}</b>`);
-    const silentTxt = (c.silent_for_s == null) ? ""
-      : `<br>quiet for ${dur(c.silent_for_s)}`;
-
-    const lensSel = (c.lenses && c.lenses.length > 1) ? `
-      <div class="inline">
-        <label>Lens</label>
-        <select onchange="cmd('${c.id}','lens',{id:this.value})">
-          ${c.lenses.map(l => `<option value="${esc(l.id)}"
-            ${l.id === c.active_lens ? "selected" : ""}>${esc(l.label)}</option>`).join("")}
-        </select>
-      </div>` : "";
-
-    const zoomRow = (c.kind === "browser" || c.ptz) ? `
-      <div class="inline">
-        <label>Zoom</label>
-        <input type="range" min="1" max="4" step="0.1" value="${c.zoom || 1}"
-               onchange="cmd('${c.id}','zoom',{value:Number(this.value)})">
-      </div>` : "";
-
-    const presets = (c.ptz_presets && c.ptz_presets.length) ? `
-      <div class="btns">
-        ${c.ptz_presets.map(p => `<button
-           onclick="cmd('${c.id}','ptz',{action:'preset',preset:'${esc(p)}'})"
-           >${esc(p)}</button>`).join("")}
-      </div>` : "";
-
-    const stats = [];
-    if (c.battery != null) {
-      stats.push(`<span class="${c.battery < 20 && !c.charging ? "bad" : ""}">`
-        + `battery ${c.battery}%${c.charging ? " charging" : ""}</span>`);
+  const seen = new Set();
+  for (const c of cams) {
+    seen.add(c.id);
+    if (!(c.id in modes)) modes[c.id] = (c.id === FOCUS ? "live" : "off");
+    let el = cardEls[c.id];
+    if (!el) {
+      el = buildCard(c);
+      cardEls[c.id] = el;
+      grid.appendChild(el);
     }
-    if (c.disk_free_gb != null) stats.push(`<span>${c.disk_free_gb} GB free</span>`);
-    if (c.clips) stats.push(`<span>${c.clips} clips on device</span>`);
-    if (c.retention_hours) stats.push(`<span>${c.retention_hours}h kept</span>`);
-    stats.push(`<span>${c.kind === "browser" ? "phone" : "laptop / IP cam"}</span>`);
-
-    return `<div class="cam ${(c.motion || c.sound) ? "alert" : ""} ${c.online ? "" : "offline"}">
-      <div class="top">
-        <span class="dot ${c.online ? "on" : "off"}"></span>
-        <span class="nm">${esc(c.name)}</span>
-        <span class="still">${stillTxt}${silentTxt}</span>
-      </div>
-      <div class="screen">${screen}<div class="pill">${tags.join("")}</div>${pad}</div>
-      <div class="meter"><i class="${hot ? "hot" : ""}" style="width:${lvl}%"></i></div>
-      <div class="rows">
-        <div class="seg">
-          ${["off", "snapshot", "live", "hd"].map(m => `
-            <button class="${mode === m ? "sel" : ""}"
-                    onclick="setMode('${c.id}','${m}')">
-              ${({ off: "Off", snapshot: "Snap", live: "Live", hd: "HD" })[m]}
-            </button>`).join("")}
-        </div>
-        <div class="btns">
-          <button class="${listening[c.id] ? "active" : ""}"
-                  onclick="setListen('${c.id}',${!listening[c.id]})"
-                  ${c.has_audio ? "" : "disabled"}>
-            ${listening[c.id] ? "Listening" : "Listen"}</button>
-          <button class="${talkCam === c.id ? "talking" : ""}"
-                  onclick="toggleTalk('${c.id}')"
-                  ${c.has_speaker ? "" : "disabled"}>
-            ${talkCam === c.id ? "Talking - tap to end" : "Talk"}</button>
-        </div>
-        <div class="btns">
-          <button class="${c.recording ? "recon" : ""}"
-                  onclick="cmd('${c.id}','record',{on:${!c.recording}})">
-            ${c.recording ? "Stop rec" : "Record"}</button>
-          <button class="${c.baby_mode ? "active" : ""}"
-                  onclick="cmd('${c.id}','baby',{on:${!c.baby_mode}})">Baby</button>
-          <button class="${c.armed ? "active" : ""}"
-                  onclick="cmd('${c.id}','arm',{on:${!c.armed}})">Alerts</button>
-          <button onclick="openClips('${c.id}','${esc(c.name)}')">Clips</button>
-        </div>
-        ${lensSel}${zoomRow}${presets}
-        <div class="stats">${stats.join("")}</div>
-      </div>
-    </div>`;
-  }).join("");
+    updateCard(el, c);
+    if (modes[c.id] !== "off" && !sockets[c.id]) openSocket(c.id, modes[c.id]);
+  }
+  for (const id of Object.keys(cardEls)) {
+    if (!seen.has(id)) { cardEls[id].remove(); delete cardEls[id]; }
+  }
 
   renderEvents();
 }
 
+function buildCard(c) {
+  const el = document.createElement("div");
+  el.className = "cam";
+  el.innerHTML = `
+    <div class="top">
+      <span class="dot"></span>
+      <span class="nm"></span>
+      <span class="still"></span>
+    </div>
+    <div class="screen">
+      <div class="idle">Tap <b>Snap</b> or <b>Live</b> to look<br>
+        <small>nothing is sent while this is off</small></div>
+      <img id="img-${c.id}" alt="" style="display:none">
+      <div class="pill"></div>
+      <div class="pad" style="display:none">
+        <i></i><button data-ptz="up">&#9650;</button><i></i>
+        <button data-ptz="left">&#9664;</button>
+        <button class="mid" data-ptz="home">HOME</button>
+        <button data-ptz="right">&#9654;</button>
+        <i></i><button data-ptz="down">&#9660;</button><i></i>
+      </div>
+    </div>
+    <div class="meter"><i></i></div>
+    <div class="rows">
+      <div class="seg">
+        <button data-mode="off">Off</button>
+        <button data-mode="snapshot">Snap</button>
+        <button data-mode="live">Live</button>
+        <button data-mode="hd">HD</button>
+      </div>
+      <div class="btns">
+        <button data-act="listen"></button>
+        <button data-act="talk"></button>
+      </div>
+      <div class="btns">
+        <button data-act="record"></button>
+        <button data-act="baby">Baby</button>
+        <button data-act="arm">Alerts</button>
+        <button data-act="clips">Clips</button>
+      </div>
+      <div class="inline lensrow" style="display:none">
+        <label>Lens</label><select data-act="lens"></select>
+      </div>
+      <div class="inline zoomrow" style="display:none">
+        <label>Zoom</label>
+        <input type="range" min="1" max="4" step="0.1" data-act="zoom">
+      </div>
+      <div class="btns presets" style="display:none"></div>
+      <div class="stats"></div>
+    </div>`;
+
+  const id = c.id;
+  el.querySelectorAll("[data-mode]").forEach(b =>
+    b.onclick = () => setMode(id, b.dataset.mode));
+
+  el.querySelectorAll("[data-ptz]").forEach(b => {
+    const action = b.dataset.ptz;
+    if (action === "home") {
+      b.onclick = () => cmd(id, "ptz", { action: "home" });
+    } else {
+      b.onpointerdown = () => ptzStart(id, action);
+      b.onpointerup = () => ptzStop(id);
+      b.onpointerleave = () => ptzStop(id);
+    }
+  });
+
+  const act = sel => el.querySelector(`[data-act="${sel}"]`);
+  act("listen").onclick = () => setListen(id, !listening[id]);
+  act("talk").onclick = () => toggleTalk(id);
+  act("record").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    cmd(id, "record", { on: !!c2.paused });      // paused -> resume
+  };
+  act("baby").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    cmd(id, "baby", { on: !c2.baby_mode });
+  };
+  act("arm").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    cmd(id, "arm", { on: !c2.armed });
+  };
+  act("clips").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    openClips(id, c2.name || id);
+  };
+  act("lens").onchange = (e) => {
+    setPending(id, "lens", e.target.value);
+    cmd(id, "lens", { id: e.target.value });
+  };
+  act("zoom").onchange = (e) => {
+    setPending(id, "zoom", Number(e.target.value));
+    cmd(id, "zoom", { value: Number(e.target.value) });
+  };
+
+  return el;
+}
+
+function updateCard(el, c) {
+  const mode = modes[c.id];
+  const q = sel => el.querySelector(sel);
+
+  el.classList.toggle("alert", !!(c.motion || c.sound));
+  el.classList.toggle("offline", !c.online);
+  q(".dot").className = "dot " + (c.online ? "on" : "off");
+  setText(q(".nm"), c.name);
+
+  const quiet = (c.quiet_for_s == null) ? "no movement data"
+    : (c.motion ? '<b class="moving">moving now</b>'
+               : `still for <b>${dur(c.quiet_for_s)}</b>`);
+  const silent = (c.silent_for_s == null) ? ""
+    : `<br>quiet for ${dur(c.silent_for_s)}`;
+  setHtml(q(".still"), quiet + silent);
+
+  const tags = [];
+  if (c.paused)    tags.push('<span class="tag pause">PAUSED</span>');
+  if (c.recording) tags.push('<span class="tag rec">REC</span>');
+  if (c.motion)    tags.push('<span class="tag mot">MOVING</span>');
+  if (c.sound)     tags.push('<span class="tag snd">SOUND</span>');
+  if (c.baby_mode) tags.push('<span class="tag">BABY</span>');
+  if (!c.armed)    tags.push('<span class="tag">ALERTS OFF</span>');
+  setHtml(q(".pill"), tags.join(""));
+
+  // The picture element itself is never replaced, only shown or hidden.
+  const img = q("img"), idle = q(".idle");
+  if (mode === "off") {
+    img.style.display = "none"; idle.style.display = "";
+  } else {
+    idle.style.display = "none";
+    if (img.src) img.style.display = "block";
+  }
+
+  const pad = q(".pad");
+  pad.style.display = (mode !== "off" && c.ptz) ? "" : "none";
+
+  const lvl = q(".meter > i");
+  lvl.style.width = Math.min(100, Math.round((c.audio_level || 0) * 300)) + "%";
+  lvl.className = (c.sound || (c.audio_level || 0) > 0.05) ? "hot" : "";
+
+  el.querySelectorAll("[data-mode]").forEach(b =>
+    b.classList.toggle("sel", b.dataset.mode === mode));
+
+  const listen = q('[data-act="listen"]');
+  setText(listen, listening[c.id] ? "Listening" : "Listen");
+  listen.classList.toggle("active", !!listening[c.id]);
+  listen.disabled = !c.has_audio;
+
+  const talk = q('[data-act="talk"]');
+  setText(talk, talkCam === c.id ? "Talking - tap to end" : "Talk");
+  talk.classList.toggle("talking", talkCam === c.id);
+  talk.disabled = !c.has_speaker;
+
+  // Recording normally runs around the clock, so this is pause and resume,
+  // not start and stop - and it has to say which it will do, not what the
+  // camera is doing.
+  const rec = q('[data-act="record"]');
+  setText(rec, c.paused ? "Resume" : "Pause rec");
+  rec.classList.toggle("recon", !c.paused && !!c.recording);
+  rec.classList.toggle("active", !!c.paused);
+  q('[data-act="baby"]').classList.toggle("active", !!c.baby_mode);
+  q('[data-act="arm"]').classList.toggle("active", !!c.armed);
+
+  // A dropdown is only rebuilt when its choices actually change, and never
+  // while it is open - otherwise it shuts the moment you reach for it.
+  const lensRow = q(".lensrow"), lens = q('[data-act="lens"]');
+  if (c.lenses && c.lenses.length > 1) {
+    lensRow.style.display = "";
+    const sig = c.lenses.map(l => l.id + "|" + l.label).join(",");
+    if (lens.dataset.sig !== sig && document.activeElement !== lens) {
+      lens.dataset.sig = sig;
+      lens.innerHTML = c.lenses.map(l =>
+        `<option value="${esc(l.id)}">${esc(l.label)}</option>`).join("");
+    }
+    const wantLens = heldValue(c.id, "lens", c.active_lens);
+    if (document.activeElement !== lens && wantLens != null
+        && lens.value !== String(wantLens)) {
+      lens.value = String(wantLens);
+    }
+  } else {
+    lensRow.style.display = "none";
+  }
+
+  const zoomRow = q(".zoomrow"), zoom = q('[data-act="zoom"]');
+  if (c.kind === "browser" || c.ptz) {
+    zoomRow.style.display = "";
+    const wantZoom = heldValue(c.id, "zoom", c.zoom);
+    if (document.activeElement !== zoom && wantZoom != null
+        && Number(zoom.value) !== Number(wantZoom)) {
+      zoom.value = wantZoom;
+    }
+  } else {
+    zoomRow.style.display = "none";
+  }
+
+  const presets = q(".presets");
+  const psig = (c.ptz_presets || []).join(",");
+  if (presets.dataset.sig !== psig) {
+    presets.dataset.sig = psig;
+    presets.style.display = psig ? "" : "none";
+    presets.innerHTML = (c.ptz_presets || []).map(p =>
+      `<button data-preset="${esc(p)}">${esc(p)}</button>`).join("");
+    presets.querySelectorAll("[data-preset]").forEach(b =>
+      b.onclick = () => cmd(c.id, "ptz",
+                           { action: "preset", preset: b.dataset.preset }));
+  }
+
+  const stats = [];
+  if (c.battery != null) {
+    stats.push(`<span class="${c.battery < 20 && !c.charging ? "bad" : ""}">`
+      + `battery ${c.battery}%${c.charging ? " charging" : ""}</span>`);
+  }
+  if (c.disk_free_gb != null) stats.push(`<span>${c.disk_free_gb} GB free</span>`);
+  if (c.clips) stats.push(`<span>${c.clips} clips on device</span>`);
+  if (c.retention_hours) stats.push(`<span>${c.retention_hours}h kept</span>`);
+  stats.push(`<span>${esc(KIND_LABEL_DEVICE[c.kind] || "camera")}</span>`);
+  setHtml(q(".stats"), stats.join(""));
+}
+
+/* Only touch the DOM when the value really changed - otherwise the browser
+   redraws constantly and selections flicker. */
+function setText(el, value) {
+  const v = String(value == null ? "" : value);
+  if (el.textContent !== v) el.textContent = v;
+}
+function setHtml(el, value) {
+  const v = String(value == null ? "" : value);
+  if (el.innerHTML !== v) el.innerHTML = v;
+}
+
 function renderEvents() {
   const box = document.getElementById("events");
+  const sig = events.length ? events[0].id + ":" + events.length : "none";
+  if (sig === eventSig) return;          // nothing new, leave it alone
+  eventSig = sig;
+
   if (!events.length) {
     box.innerHTML = `<div class="ev"><div class="txt"><div class="d">
       Nothing yet. Movement, sounds and cameras going on or offline appear

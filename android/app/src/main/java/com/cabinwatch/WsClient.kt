@@ -65,7 +65,7 @@ class WsClient(
                 "?token=" + enc(token) +
                 "&id=" + enc(cameraId) +
                 "&name=" + enc(cameraName) +
-                "&kind=agent"
+                "&kind=android"
     }
 
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")

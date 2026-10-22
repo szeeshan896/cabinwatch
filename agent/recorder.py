@@ -72,6 +72,10 @@ class Recorder:
         self._prebuffer = deque(maxlen=max(1, int(fps * prebuffer_seconds)))
 
         self.manual = False
+        # Pausing beats everything else, including round-the-clock recording.
+        # Without this the Stop button did nothing at all: it cleared manual
+        # and always_record carried on regardless.
+        self.paused = False
         self._event_until = 0.0
 
         self._stop = threading.Event()
@@ -122,6 +126,8 @@ class Recorder:
         return self._current
 
     def should_record(self):
+        if self.paused:
+            return False
         if self.manual:
             return True
         if self.always_record:

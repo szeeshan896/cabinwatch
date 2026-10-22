@@ -192,6 +192,9 @@ let sendAudio = false;             // dashboard is listening
 let zoom = 1.0;
 
 let recorder = null, recTimer = null, manualRecord = false;
+// Recording runs continuously, so the dashboard button pauses it. Without
+// this the button looked like it worked and changed nothing.
+let paused = false;
 let clipCount = 0, usedBytes = 0;
 let retentionHours = 12, maxBytes = 2000 * 1024 * 1024;
 
@@ -516,7 +519,7 @@ function pickMime() {
 }
 
 function startRecorder() {
-  if (!stream || !window.MediaRecorder) return;
+  if (!stream || !window.MediaRecorder || paused) return;
   const mime = pickMime();
   try {
     recorder = mime
@@ -550,7 +553,7 @@ function rollRecorder() {
   if (recorder && recorder.state !== "inactive") {
     try { recorder.stop(); } catch (e) {}
   }
-  if (running) setTimeout(startRecorder, 150);
+  if (running && !paused) setTimeout(startRecorder, 150);
 }
 
 function stopRecorder() {
@@ -704,8 +707,15 @@ async function handle(m) {
       playAt = 0;
       break;
     case "record":
-      manualRecord = !!m.on;
-      if (manualRecord) pendingKeep.add("manual");
+      paused = !m.on;
+      if (paused) {
+        manualRecord = false;
+        stopRecorder();
+      } else {
+        manualRecord = true;
+        pendingKeep.add("manual");
+        if (running && !recorder) startRecorder();
+      }
       pushState();
       break;
     case "baby_mode":
@@ -792,6 +802,7 @@ function pushState() {
     name: camName,
     status: running ? "live" : "idle",
     recording: !!(recorder && recorder.state === "recording"),
+    paused: paused,
     motion: motionOn,
     sound: soundOn,
     audio_level: Math.round(audioLevel * 1000) / 1000,

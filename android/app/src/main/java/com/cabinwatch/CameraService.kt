@@ -108,6 +108,9 @@ class CameraService : LifecycleService(), WsClient.Events {
     private var lastMotionAt = 0L
     private var lastSoundAt = 0L
     private var manualKeep = false
+    // Recording runs around the clock, so the dashboard button pauses it
+    // rather than starting it. Without this the button changed nothing.
+    private var paused = false
     private val lastEventAt = HashMap<String, Long>()
     private var lensLabels = JSONArray()
     private var statusText = "starting"
@@ -466,7 +469,7 @@ class CameraService : LifecycleService(), WsClient.Events {
     // ======================================================================
     private fun startSegment() {
         val vc = videoCapture ?: return
-        if (activeRecording != null) return
+        if (activeRecording != null || paused) return
         try {
             val file = clips.newClipFile()
             var pending = vc.output.prepareRecording(
@@ -498,7 +501,9 @@ class CameraService : LifecycleService(), WsClient.Events {
         // One file per minute, so each one plays on its own and the oldest can
         // be deleted without touching the rest.
         stopSegment()
-        if (settings.running && canRecord) handler.postDelayed({ startSegment() }, 200)
+        if (settings.running && canRecord && !paused) {
+            handler.postDelayed({ startSegment() }, 200)
+        }
     }
 
     private fun stopSegment() {
@@ -726,9 +731,21 @@ class CameraService : LifecycleService(), WsClient.Events {
             "audio" -> sendMic = msg.optBoolean("on")
             "talk" -> if (msg.optBoolean("on")) ensureAudioTrack()
             "record" -> {
-                manualKeep = msg.optBoolean("on")
-                if (manualKeep) clips.markKeep(currentClipName)
-                pushState()
+                val on = msg.optBoolean("on")
+                paused = !on
+                handler.post {
+                    if (paused) {
+                        manualKeep = false
+                        stopSegment()
+                        Log.i(TAG, "recording paused")
+                    } else {
+                        manualKeep = true
+                        clips.markKeep(currentClipName)
+                        if (canRecord && activeRecording == null) startSegment()
+                        Log.i(TAG, "recording resumed")
+                    }
+                    pushState()
+                }
             }
             "baby_mode" -> {
                 settings.babyMode = msg.optBoolean("on"); pushState()
@@ -839,6 +856,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("name", settings.cameraName.ifEmpty { "Phone camera" })
             put("status", status)
             put("recording", activeRecording != null)
+            put("paused", paused)
             put("motion", motionOn)
             put("sound", sound.loud)
             put("audio_level", Math.round(sound.level * 1000.0) / 1000.0)

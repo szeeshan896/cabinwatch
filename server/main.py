@@ -357,8 +357,9 @@ async def ws_camera(ws: WebSocket):
 
 
 STATE_FIELDS = (
-    "status", "recording", "motion", "sound", "audio_level", "baby_mode",
-    "armed", "disk_free_gb", "clips", "retention_hours", "quiet_for_s",
+    "status", "recording", "paused", "motion", "sound", "audio_level",
+    "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
+    "quiet_for_s",
     "silent_for_s", "battery", "charging", "ptz", "ptz_presets", "lenses",
     "active_lens", "zoom", "has_audio", "has_speaker",
 )
