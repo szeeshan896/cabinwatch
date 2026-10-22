@@ -46,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ptz as ptz_mod
 import setup_wizard
+import local_ui
 from recorder import Recorder
 from detect import MotionDetector, PersonDetector, SoundDetector
 
@@ -167,17 +168,25 @@ class CameraSession:
         self._event_times = {}
 
         # -- recording
+        # Each camera may set its own clip length; the config value is the
+        # default for the machine.
+        segment_seconds = int(conf.get("segment_seconds",
+                                       cfg.SEGMENT_SECONDS))
+        want_audio = bool(conf.get("audio", True)) and sd is not None
+
         self.rec = Recorder(
             cam_id,
             clips_dir=cfg.CLIPS_DIR,
             fps=self.target_fps,
-            segment_seconds=cfg.SEGMENT_SECONDS,
+            segment_seconds=segment_seconds,
             retention_hours=conf.get("retention_hours", cfg.RETENTION_HOURS),
             event_retention_hours=conf.get("event_retention_hours",
                                            cfg.EVENT_RETENTION_HOURS),
             max_disk_gb=conf.get("max_disk_gb", cfg.MAX_DISK_GB),
             always_record=conf.get("always_record", cfg.ALWAYS_RECORD),
             prebuffer_seconds=cfg.PREBUFFER_SECONDS,
+            audio_rate=AUDIO_RATE,
+            want_audio=want_audio,
         )
 
         # -- audio
@@ -674,11 +683,16 @@ class CameraSession:
                             "sound": "Continuous sound in the room.",
                         }.get(kind, ""), frame)
 
+                    # One conversion, three uses: the clip being written,
+                    # the dashboard when somebody is listening, and the
+                    # detector above. The same open device serves all of
+                    # them, which is what keeps Windows from refusing a
+                    # second recorder.
+                    pcm_bytes = (np.clip(mono, -1.0, 1.0) * 32767
+                                 ).astype("<i2").tobytes()
+                    self.rec.write_audio(pcm_bytes)
                     if self.send_audio:
-                        pcm = np.clip(mono, -1.0, 1.0)
-                        self.send_binary(
-                            BIN_AUDIO,
-                            (pcm * 32767).astype("<i2").tobytes())
+                        self.send_binary(BIN_AUDIO, pcm_bytes)
         except Exception as e:
             print(f"[{self.cam_id}] microphone unavailable: {e}")
             self.audio_enabled = False
@@ -839,6 +853,78 @@ def probe_cameras(limit=6):
     return found
 
 
+class Supervisor:
+    """Owns the running cameras so the settings page can restart them.
+
+    Changing which camera or microphone a session uses means opening a
+    different device, so there is nothing to patch in place: the session is
+    stopped and a fresh one started from the new settings.
+    """
+
+    def __init__(self, cfg, wanted):
+        self.cfg = cfg
+        self.wanted = dict(wanted)
+        self.sessions = {}
+        self._lock = threading.Lock()
+
+    @property
+    def editable(self):
+        """Hand-written config.py wins over the file, so do not fight it."""
+        return isinstance(self.cfg, setup_wizard.JsonConfig)
+
+    def config_data(self):
+        if isinstance(self.cfg, setup_wizard.JsonConfig):
+            return dict(self.cfg.raw)
+        # A module-based config cannot be written back, but the page should
+        # still be able to show what is running.
+        return {
+            "server_url": getattr(self.cfg, "SERVER_URL", ""),
+            "agent_token": getattr(self.cfg, "AGENT_TOKEN", ""),
+            "retention_hours": getattr(self.cfg, "RETENTION_HOURS", 72),
+            "max_disk_gb": getattr(self.cfg, "MAX_DISK_GB", 20.0),
+            "segment_seconds": getattr(self.cfg, "SEGMENT_SECONDS", 300),
+            "cameras": dict(self.wanted),
+        }
+
+    def start(self):
+        with self._lock:
+            for cam_id, conf in self.wanted.items():
+                try:
+                    s = CameraSession(cam_id, conf, self.cfg)
+                    s.start()
+                    self.sessions[cam_id] = s
+                except Exception as e:
+                    print(f"[{cam_id}] failed to start: {e}")
+        return bool(self.sessions)
+
+    def stop(self):
+        with self._lock:
+            for s in self.sessions.values():
+                try:
+                    s.stop()
+                except Exception:
+                    pass
+            self.sessions.clear()
+
+    def apply(self, data):
+        """Save new settings and restart every camera from them."""
+        if not self.editable:
+            raise RuntimeError(
+                "These settings come from agent/config.py, so they have to be "
+                "changed there. Delete config.py to manage them here instead.")
+
+        setup_wizard.save_json_config(data)
+        new_cfg = setup_wizard.JsonConfig(data)
+
+        print("[panel] settings changed - restarting the cameras")
+        self.stop()
+        time.sleep(0.8)              # let the devices be released
+        self.cfg = new_cfg
+        self.wanted = dict(new_cfg.CAMERAS)
+        os.makedirs(new_cfg.CLIPS_DIR, exist_ok=True)
+        self.start()
+
+
 def list_microphones():
     """[(index, name)] for every input device, or [] if audio is unavailable."""
     if sd is None:
@@ -860,6 +946,12 @@ def main():
     ap.add_argument("--setup", action="store_true",
                     help="ask the setup questions again and overwrite "
                          "cabinwatch.json")
+    ap.add_argument("--no-panel", action="store_true",
+                    help="do not serve the local settings page")
+    ap.add_argument("--panel-port", type=int, default=8765,
+                    help="port for the local settings page (default 8765)")
+    ap.add_argument("--open", action="store_true",
+                    help="open the settings page in a browser on start")
     args = ap.parse_args()
 
     if args.list_cameras:
@@ -914,25 +1006,26 @@ def main():
     print(f"  cameras  : {', '.join(wanted)}")
     print("=" * 62)
 
-    sessions = []
-    for cam_id, conf in wanted.items():
-        try:
-            s = CameraSession(cam_id, conf, cfg)
-            s.start()
-            sessions.append(s)
-        except Exception as e:
-            print(f"[{cam_id}] failed to start: {e}")
-
-    if not sessions:
+    supervisor = Supervisor(cfg, wanted)
+    if not supervisor.start():
         sys.exit("No camera could be started.")
+
+    panel = None
+    if not args.no_panel:
+        port = local_ui.free_port(args.panel_port)
+        panel = local_ui.ControlPanel(supervisor, port=port)
+        if panel.start(open_browser=args.open):
+            print(f"\n  To change the camera or microphone, open "
+                  f"{panel.url} on this machine.\n")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nstopping...")
-        for s in sessions:
-            s.stop()
+        if panel is not None:
+            panel.stop()
+        supervisor.stop()
         time.sleep(0.6)
 
 

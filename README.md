@@ -58,7 +58,8 @@ internet.
 | **Baby sounds** | Tells a cry apart from a fan, and a thud apart from both. |
 | **"Still for 23 min"** | One glance tells you whether he is asleep or moving. |
 | **Two-way talk** | Hear the room, and speak into it from your phone. |
-| **24×7 recording** | On the device, oldest deleted automatically. |
+| **24×7 recording** | On the device, with sound, oldest deleted automatically. |
+| **Settings without a console** | The laptop agent serves a settings page on that machine: live preview, microphone meter, device pickers. |
 | **Event clips kept longer** | The minute something happened survives days after the ordinary footage is recycled. |
 | **Pan / tilt** | Arrow pad and saved positions for rotating cameras. |
 | **Dual cameras** | Switch between a phone's front, back and wide lenses remotely. |
@@ -204,6 +205,10 @@ detector at the same time, so turning it on can cost you the crying alerts and
 the Listen button. Video-only recordings keep everything working, and for
 knowing what happened the picture is what matters.
 
+(The laptop agent has no such problem — its recordings always have sound, and
+the same open microphone serves the recording, the alerts and the Listen
+button at once.)
+
 If a phone cannot record and stream at the same time — a few older ones
 cannot — the app falls back to watching only and says so on the dashboard,
 rather than looking healthy while saving nothing.
@@ -250,6 +255,25 @@ asked again.
 
 Keep the console window open — that is the program running. It prints what it
 is doing, which is also where you look first if something is wrong.
+
+**To change anything afterwards, you do not have to touch the console or the
+file.** While the agent runs it serves a settings page on that machine only:
+
+```
+http://127.0.0.1:8765
+```
+
+It shows each camera's live picture and a microphone level that moves when you
+speak, so you can tell which device is which before committing to it. From
+there you can switch camera or microphone, rename a camera, change what it is
+watching, set how long each saved file is, how long footage is kept and how
+much disk it may use, and point it at a different server. Press **Apply** and
+that camera restarts on the new settings.
+
+It listens on `127.0.0.1` and nowhere else — the page holds your token, so it
+is only for whoever is already sitting at that machine. Start the agent with
+`--open` to have it pop up by itself, `--no-panel` to turn it off, or
+`--panel-port 9000` to move it.
 
 ### 4b. With Python — for more than one camera
 

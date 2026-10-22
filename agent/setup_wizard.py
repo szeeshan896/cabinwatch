@@ -40,6 +40,9 @@ class JsonConfig:
 
     def __init__(self, data):
         d = data or {}
+        # Kept so the settings page can hand the whole thing back with only
+        # the fields somebody actually changed replaced.
+        self.raw = dict(d)
 
         self.SERVER_URL = str(d.get("server_url", "")).strip().rstrip("/")
         self.AGENT_TOKEN = str(d.get("agent_token", "")).strip()

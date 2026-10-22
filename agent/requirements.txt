@@ -10,6 +10,11 @@ opencv-python>=4.9.0,<5.0
 numpy>=1.24.0
 websocket-client>=1.7.0
 
+# Puts the sound into the saved recordings. OpenCV writes video only, so
+# ffmpeg joins each clip to the audio captured alongside it. This package
+# carries its own ffmpeg, so nothing has to be installed separately.
+imageio-ffmpeg>=0.5.1
+
 # Microphone and speaker, for baby-sound alerts and two-way talk.
 # Drop this line if a camera has no mic and you do not need to talk back.
 sounddevice>=0.4.6

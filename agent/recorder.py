@@ -18,17 +18,21 @@ hours have already been recycled.
 import os
 import time
 import json
+import wave
 import shutil
 import threading
 import datetime
 
 import cv2
 
+import muxer
+
 
 class Recorder:
-    def __init__(self, cam_id, clips_dir, fps=15.0, segment_seconds=60,
+    def __init__(self, cam_id, clips_dir, fps=15.0, segment_seconds=300,
                  retention_hours=72, event_retention_hours=336,
-                 max_disk_gb=20.0, always_record=True, prebuffer_seconds=6):
+                 max_disk_gb=20.0, always_record=True, prebuffer_seconds=6,
+                 audio_rate=16000, want_audio=True):
         self.cam_id = cam_id
         self.dir = os.path.join(clips_dir, cam_id)
         self.fps = float(fps)
@@ -39,9 +43,22 @@ class Recorder:
         self.always_record = bool(always_record)
         self.prebuffer_seconds = int(prebuffer_seconds)
 
+        # Half-written video and its sound live here until they are joined,
+        # so a listing of finished clips never has to know about them.
+        self.tmp_dir = os.path.join(self.dir, ".tmp")
         os.makedirs(self.dir, exist_ok=True)
+        os.makedirs(self.tmp_dir, exist_ok=True)
+        self._clear_tmp()
+
         self._keep_path = os.path.join(self.dir, "keep.json")
         self._keep = self._load_keep()
+
+        self.audio_rate = int(audio_rate)
+        self.want_audio = bool(want_audio)
+        self._wav = None
+        self._video_tmp = None
+        self._audio_tmp = None
+        self._frames = 0
 
         self._writer = None
         self._current = None
@@ -62,6 +79,17 @@ class Recorder:
         self._janitor.start()
 
     # -- keep-list -----------------------------------------------------------
+    def _clear_tmp(self):
+        """Drop half-written pieces left behind by a crash or power cut."""
+        try:
+            for n in os.listdir(self.tmp_dir):
+                try:
+                    os.remove(os.path.join(self.tmp_dir, n))
+                except OSError:
+                    pass
+        except FileNotFoundError:
+            pass
+
     def _load_keep(self):
         try:
             with open(self._keep_path) as f:
@@ -128,23 +156,59 @@ class Recorder:
         if self._writer is not None:
             try:
                 self._writer.write(frame)
+                self._frames += 1
             except Exception as e:
                 print(f"[rec {self.cam_id}] write failed: {e}")
                 self._close()
+
+    def write_audio(self, pcm_bytes):
+        """Feed 16-bit mono samples for the segment being written.
+
+        Comes straight from the microphone the agent already has open for
+        its sound alerts, so nothing competes for the device.
+        """
+        wav = self._wav
+        if wav is None or not pcm_bytes:
+            return
+        try:
+            wav.writeframes(pcm_bytes)
+        except Exception:
+            pass
 
     def _open(self, frame):
         h, w = frame.shape[:2]
         ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         name = f"{ts}.mp4"
-        path = os.path.join(self.dir, name)
+        video_tmp = os.path.join(self.tmp_dir, f"{ts}.video.mp4")
+        audio_tmp = os.path.join(self.tmp_dir, f"{ts}.audio.wav")
+
         # mp4v is the codec OpenCV can always write without extra packages.
-        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"),
+        writer = cv2.VideoWriter(video_tmp, cv2.VideoWriter_fourcc(*"mp4v"),
                                  self.fps, (w, h))
         if not writer.isOpened():
-            print(f"[rec {self.cam_id}] could not open {path}")
+            print(f"[rec {self.cam_id}] could not open {video_tmp}")
             return
+
+        wav = None
+        if self.want_audio and muxer.available():
+            try:
+                wav = wave.open(audio_tmp, "wb")
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(self.audio_rate)
+            except Exception as e:
+                print(f"[rec {self.cam_id}] could not start the sound "
+                      f"track: {e}")
+                wav = None
+        elif self.want_audio:
+            muxer.warn_once()
+
         with self._lock:
             self._writer = writer
+            self._wav = wav
+            self._video_tmp = video_tmp
+            self._audio_tmp = audio_tmp if wav is not None else None
+            self._frames = 0
             self._current = name
             self._size = (w, h)
             self._started_at = time.time()
@@ -154,13 +218,33 @@ class Recorder:
 
     def _close(self):
         with self._lock:
-            if self._writer is not None:
-                try:
-                    self._writer.release()
-                except Exception:
-                    pass
-            self._writer = None
+            writer, wav = self._writer, self._wav
+            video_tmp, audio_tmp = self._video_tmp, self._audio_tmp
+            name, frames = self._current, self._frames
+            seconds = time.time() - self._started_at if self._started_at else 0
+            self._writer = self._wav = None
+            self._video_tmp = self._audio_tmp = None
             self._current = None
+            self._frames = 0
+
+        if writer is not None:
+            try:
+                writer.release()
+            except Exception:
+                pass
+        if wav is not None:
+            try:
+                wav.close()
+            except Exception:
+                pass
+
+        if name is None or video_tmp is None:
+            return
+
+        # Joining happens off the capture thread, so a slow encode never
+        # drops frames or stalls the live view.
+        muxer.mux(video_tmp, audio_tmp, os.path.join(self.dir, name),
+                  declared_fps=self.fps, frames=frames, seconds=seconds)
 
     def stop(self):
         self._stop.set()

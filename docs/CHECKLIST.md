@@ -48,7 +48,10 @@ Pick whichever you have spare. A laptop hears better; a phone hides better.
 - [ ] Download the **cabinwatch-laptop-agent-exe** artifact, unzip it
 - [ ] Double-click `CabinWatch-Agent.exe` and answer the questions
 - [ ] Leave the console window open — that is the program running
-- [ ] Later changes: edit `cabinwatch.json` beside it, or run with `--setup`
+- [ ] Open **http://127.0.0.1:8765** on that machine for the settings page:
+      live preview, microphone meter, camera and mic pickers, clip length
+- [ ] Say something near the mic and watch the bar move — that is how you
+      know the right microphone is selected
 
 **Laptop, with Python (needed for several cameras or an ONVIF camera)**
 - [ ] `pip install -r agent/requirements.txt`

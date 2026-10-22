@@ -30,7 +30,11 @@ VERIFY_TLS = True
 # ---------------------------------------------------------------------------
 CLIPS_DIR = "clips"
 
-SEGMENT_SECONDS = 60        # one video file per minute
+SEGMENT_SECONDS = 300       # how long one video file covers, in seconds.
+                            # 300 = 5 minutes. Shorter files are quicker to
+                            # scrub through and cost less if the machine
+                            # loses power mid-write; longer ones are nicer to
+                            # watch. Any camera can override it.
 RETENTION_HOURS = 72        # ordinary footage is recycled after this
 EVENT_RETENTION_HOURS = 336 # footage with movement/sound is kept 14 days
 MAX_DISK_GB = 20.0          # never use more disk than this

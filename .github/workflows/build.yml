@@ -110,9 +110,12 @@ jobs:
           --hidden-import detect
           --hidden-import setup_wizard
           --hidden-import config_example
+          --hidden-import muxer
+          --hidden-import local_ui
           --collect-all numpy
           --collect-all cv2
           --collect-all sounddevice
+          --collect-all imageio_ffmpeg
           agent/agent.py
 
       # --help alone only proves argparse survived. --list-cameras imports
@@ -124,6 +127,14 @@ jobs:
           .\dist\CabinWatch-Agent.exe --help
           .\dist\CabinWatch-Agent.exe --list-cameras
           Write-Host "The executable starts and can reach OpenCV and audio."
+
+      # A silent recording is the bug this guards against: if ffmpeg did not
+      # make it into the bundle, every saved clip loses its sound and nothing
+      # says so until somebody plays one back.
+      - name: Check ffmpeg came along, so recordings keep their sound
+        run: |
+          $env:PYTHONPATH = "agent"
+          python -c "import sys; sys.path.insert(0,'agent'); import muxer; p = muxer.ffmpeg(); print('ffmpeg:', p); sys.exit(0 if p else 1)"
 
       - name: Upload
         uses: actions/upload-artifact@v4
