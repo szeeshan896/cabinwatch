@@ -25,6 +25,18 @@ from . import protocol
 from .notify import notifier
 
 
+# Everything a camera may tell us about itself. The server keeps this in one
+# place because it used to live here as defaults AND again in main.py as an
+# allow-list, and the two drifted apart the first time a field was added.
+STATE_FIELDS = (
+    "status", "recording", "paused", "motion", "sound", "audio_level",
+    "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
+    "quiet_for_s", "silent_for_s", "battery", "charging", "ptz",
+    "ptz_presets", "lenses", "active_lens", "zoom", "has_audio",
+    "has_speaker",
+)
+
+
 class ClipTransfer:
     """One recording being pulled off a camera device, chunk by chunk."""
 

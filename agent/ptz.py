@@ -21,7 +21,6 @@ All backends expose the same four calls, so the dashboard does not care which
 one is in use.
 """
 
-import time
 import shutil
 import threading
 import subprocess

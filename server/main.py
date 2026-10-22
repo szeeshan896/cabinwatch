@@ -12,7 +12,6 @@ Deploy target: Railway (or any host that gives you an HTTPS URL).
     uvicorn server.main:app --host 0.0.0.0 --port $PORT
 """
 
-import io
 import json
 import time
 import hmac
@@ -29,7 +28,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import settings
 from . import protocol
-from .hub import hub, Camera, Viewer, reaper
+from .hub import hub, Camera, Viewer, reaper, STATE_FIELDS
 from .notify import notifier
 
 templates = Jinja2Templates(directory="server/templates")
@@ -196,16 +195,6 @@ async def event_thumb(eid: int):
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
-@app.get("/snapshot/{cam_id}.jpg")
-async def snapshot(cam_id: str, request: Request):
-    require_login(request)
-    cam = hub.get(cam_id)
-    if cam is None or cam.last_jpeg is None:
-        raise HTTPException(status_code=404)
-    return Response(content=cam.last_jpeg, media_type="image/jpeg",
-                    headers={"Cache-Control": "no-store"})
-
-
 # ---------------------------------------------------------------------------
 # Recordings that live on the camera device
 # ---------------------------------------------------------------------------
@@ -354,15 +343,6 @@ async def ws_camera(ws: WebSocket):
     finally:
         print(f"[camera] {cam_id} disconnected")
         await hub.unregister(cam)
-
-
-STATE_FIELDS = (
-    "status", "recording", "paused", "motion", "sound", "audio_level",
-    "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
-    "quiet_for_s",
-    "silent_for_s", "battery", "charging", "ptz", "ptz_presets", "lenses",
-    "active_lens", "zoom", "has_audio", "has_speaker",
-)
 
 
 async def _on_camera_message(cam: Camera, text: str):

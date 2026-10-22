@@ -22,6 +22,7 @@ import wave
 import shutil
 import threading
 import datetime
+import contextlib
 
 import cv2
 
@@ -48,7 +49,9 @@ class Recorder:
         self.tmp_dir = os.path.join(self.dir, ".tmp")
         os.makedirs(self.dir, exist_ok=True)
         os.makedirs(self.tmp_dir, exist_ok=True)
-        self._clear_tmp()
+
+        self._muxes = []                     # joins still running
+        self._recover_tmp()
 
         self._keep_path = os.path.join(self.dir, "keep.json")
         self._keep = self._load_keep()
@@ -83,16 +86,43 @@ class Recorder:
         self._janitor.start()
 
     # -- keep-list -----------------------------------------------------------
-    def _clear_tmp(self):
-        """Drop half-written pieces left behind by a crash or power cut."""
+    def _recover_tmp(self):
+        """Finish clips a crash or a power cut left half-joined.
+
+        These used to be deleted on startup, which threw away the most
+        recent footage every time - exactly the footage somebody stopping
+        the agent after an incident would want.
+        """
         try:
-            for n in os.listdir(self.tmp_dir):
-                try:
-                    os.remove(os.path.join(self.tmp_dir, n))
-                except OSError:
-                    pass
+            names = os.listdir(self.tmp_dir)
         except FileNotFoundError:
-            pass
+            return
+
+        stamps = sorted({n.rsplit(".", 2)[0] for n in names
+                         if n.endswith((".video.mp4", ".audio.wav"))})
+        for ts in stamps:
+            video = os.path.join(self.tmp_dir, f"{ts}.video.mp4")
+            audio = os.path.join(self.tmp_dir, f"{ts}.audio.wav")
+            final = os.path.join(self.dir, f"{ts}.mp4")
+            if not os.path.isfile(video) or os.path.getsize(video) < 2048:
+                for p2 in (video, audio):
+                    with contextlib.suppress(OSError):
+                        os.remove(p2)
+                continue
+            if os.path.isfile(final):
+                continue
+            print(f"[rec {self.cam_id}] recovering {ts}.mp4 left by a "
+                  f"previous run")
+            # No frame count survived the crash, so no timing correction.
+            self._muxes.append(muxer.mux(
+                video, audio if os.path.isfile(audio) else None, final,
+                declared_fps=self.fps, frames=0, seconds=0))
+
+        # Anything else in there is not part of a clip.
+        for n in names:
+            if not n.endswith((".video.mp4", ".audio.wav")):
+                with contextlib.suppress(OSError):
+                    os.remove(os.path.join(self.tmp_dir, n))
 
     def _load_keep(self):
         try:
@@ -249,12 +279,28 @@ class Recorder:
 
         # Joining happens off the capture thread, so a slow encode never
         # drops frames or stalls the live view.
-        muxer.mux(video_tmp, audio_tmp, os.path.join(self.dir, name),
-                  declared_fps=self.fps, frames=frames, seconds=seconds)
+        self._muxes = [t for t in self._muxes if t.is_alive()]
+        self._muxes.append(muxer.mux(
+            video_tmp, audio_tmp, os.path.join(self.dir, name),
+            declared_fps=self.fps, frames=frames, seconds=seconds))
 
-    def stop(self):
+    def stop(self, timeout=25.0):
+        """Close the open clip and wait for it to finish being written.
+
+        The joining runs on a daemon thread, so returning without waiting
+        meant the last segment vanished every time the agent was stopped.
+        """
         self._stop.set()
         self._close()
+        deadline = time.time() + timeout
+        for t in self._muxes:
+            left = deadline - time.time()
+            if left <= 0:
+                print(f"[rec {self.cam_id}] still finishing a clip; it will "
+                      f"be recovered on the next start")
+                break
+            t.join(timeout=left)
+        self._muxes = []
 
     # -- listing and reading -------------------------------------------------
     def list_clips(self, limit=500):

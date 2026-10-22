@@ -14,6 +14,7 @@ whoever is already sitting at this machine.
 """
 
 import os
+import copy
 import json
 import socket
 import threading
@@ -234,7 +235,10 @@ class ControlPanel:
     # -- what the page writes ------------------------------------------------
     def save(self, body):
         """Apply the form. Returns (ok, message)."""
-        data = self.supervisor.config_data()
+        # A shallow copy shares the nested camera dicts with the running
+        # config, so a form that failed validation half way through had
+        # already changed the live settings. Work on our own copy.
+        data = copy.deepcopy(self.supervisor.config_data())
 
         server = str(body.get("server_url", "")).strip().rstrip("/")
         if server and not server.startswith(("http://", "https://")):
