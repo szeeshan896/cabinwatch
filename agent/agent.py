@@ -158,9 +158,12 @@ class CameraSession:
         )
         # Somebody turning the camera to face a wall protects nobody, and
         # does it silently - so that is worth its own alarm.
+        # getattr, not cfg.X: a config.py written before this option existed
+        # is still a valid config.py, and must not crash the agent.
         self.tamper = SceneChangeDetector(
-            hold_seconds=conf.get("tamper_hold_seconds",
-                                  cfg.TAMPER_HOLD_SECONDS),
+            hold_seconds=conf.get(
+                "tamper_hold_seconds",
+                getattr(cfg, "TAMPER_HOLD_SECONDS", 4.0)),
         ) if conf.get("tamper_detection", True) else None
 
         self.sound = SoundDetector(
