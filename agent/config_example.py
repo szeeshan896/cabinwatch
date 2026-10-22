@@ -52,6 +52,12 @@ SOUND_SENSITIVITY = 1.0     # above 1.0 = more sensitive to quieter sounds
 CRY_SECONDS = 1.2           # how long a cry must last before alerting
 EVENT_MIN_GAP = 25.0        # seconds between two alerts of the same kind
 
+# Watching the camera itself. If the view changes completely and stays
+# changed, somebody has turned it, knocked it or covered it. Raise this if a
+# camera sits somewhere that legitimately changes view (a door it is taped
+# to), lower it to be told sooner.
+TAMPER_HOLD_SECONDS = 4.0
+
 # Microphone and speaker. None = the system default. Numbers come from
 # "python agent/agent.py --list-cameras".
 AUDIO_DEVICE = None

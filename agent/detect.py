@@ -158,6 +158,111 @@ class PersonDetector:
             return False
 
 
+class SceneChangeDetector:
+    """Notices when the camera itself has been moved or covered.
+
+    Someone walking past changes the picture for a moment and then it goes
+    back. Moving the camera changes it and it stays changed. That difference
+    is the whole test: the current view is compared against a reference of
+    how this camera's view normally looks, and only a large change that is
+    still there seconds later counts.
+
+    Waiting it out is what keeps a person crossing the room, a door swinging
+    or a light being switched on from raising a tamper alarm, and it is why
+    this is a separate thing from movement detection rather than a louder
+    version of it.
+    """
+
+    def __init__(self, changed_fraction=0.5, hold_seconds=4.0,
+                 settle_seconds=25.0):
+        self.changed_fraction = float(changed_fraction)
+        self.hold_seconds = float(hold_seconds)
+        self.settle_seconds = float(settle_seconds)
+
+        self._reference = None
+        self._reference_at = 0.0
+        self._differing_since = 0.0
+        self.last_fraction = 0.0
+
+    def reset(self):
+        self._reference = None
+        self._differing_since = 0.0
+
+    @staticmethod
+    def _thumb(frame):
+        """A small view of the frame, with brightness taken out of it.
+
+        Switching a light on shifts every pixel at once, which looks exactly
+        like a new view if you compare raw brightness - the first version of
+        this raised a tamper alarm every time someone turned on the lamp.
+        Subtracting the mean and dividing by the spread compares the shape of
+        the scene instead, which a lamp does not change and moving the camera
+        does.
+        """
+        small = cv2.resize(frame, (64, 48), interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0).astype(np.float32)
+        spread = float(gray.std())
+        if spread < 4.0:
+            # Nothing to compare: a blank view means the lens is covered or
+            # the room is pitch dark.
+            return None
+        return (gray - gray.mean()) / spread
+
+    def check(self, frame):
+        """Returns True once, at the moment a move is confirmed."""
+        now = time.time()
+        thumb = self._thumb(frame)
+
+        if thumb is None:
+            # A covered lens is tampering in its own right, and is held for
+            # the same time as any other change before it counts.
+            self.last_fraction = 1.0
+            if not self._differing_since:
+                self._differing_since = now
+                return False
+            if now - self._differing_since >= self.hold_seconds:
+                self._reference = None
+                self._differing_since = 0.0
+                return True
+            return False
+
+        if self._reference is None:
+            self._reference = thumb
+            self._reference_at = now
+            self._differing_since = 0.0
+            return False
+
+        # How much the two views still look like each other. Counting
+        # changed pixels separated a real move from a false one by far too
+        # little; correlation puts an unchanged scene at ~0 and a new view
+        # near 1 whatever the lighting, so the gap is wide enough to set a
+        # threshold without tuning it to one room.
+        changed = float(1.0 - np.mean(self._reference * thumb))
+        self.last_fraction = max(0.0, min(2.0, changed))
+
+        if changed < self.changed_fraction:
+            # Back to normal, so whatever it was has passed.
+            self._differing_since = 0.0
+            # Let the reference drift with daylight and slow changes.
+            if now - self._reference_at > self.settle_seconds:
+                self._reference = thumb
+                self._reference_at = now
+            return False
+
+        if not self._differing_since:
+            self._differing_since = now
+            return False
+
+        if now - self._differing_since >= self.hold_seconds:
+            # Still a different view after waiting: the camera moved.
+            self._reference = thumb
+            self._reference_at = now
+            self._differing_since = 0.0
+            return True
+        return False
+
+
 class SoundDetector:
     """Turns a stream of microphone samples into sound / cry / thud events.
 

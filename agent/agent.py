@@ -49,7 +49,8 @@ import setup_wizard
 import local_ui
 from resample import Resampler
 from recorder import Recorder
-from detect import MotionDetector, PersonDetector, SoundDetector
+from detect import (MotionDetector, PersonDetector, SoundDetector,
+                    SceneChangeDetector)
 
 try:
     import websocket          # pip install websocket-client
@@ -155,6 +156,13 @@ class CameraSession:
             proto=getattr(cfg, "SSD_PROTO", None),
             model=getattr(cfg, "SSD_MODEL", None),
         )
+        # Somebody turning the camera to face a wall protects nobody, and
+        # does it silently - so that is worth its own alarm.
+        self.tamper = SceneChangeDetector(
+            hold_seconds=conf.get("tamper_hold_seconds",
+                                  cfg.TAMPER_HOLD_SECONDS),
+        ) if conf.get("tamper_detection", True) else None
+
         self.sound = SoundDetector(
             rate=AUDIO_RATE,
             sensitivity=conf.get("sound_sensitivity", cfg.SOUND_SENSITIVITY),
@@ -166,6 +174,7 @@ class CameraSession:
         self.motion_on = False
         self.last_motion_at = 0.0
         self.last_sound_at = 0.0
+        self.last_moved_at = 0.0
         self._event_times = {}
 
         # -- recording
@@ -565,6 +574,14 @@ class CameraSession:
             self.status = "live"
             now = time.time()
 
+            if self.tamper is not None and self.tamper.check(frame):
+                self.last_moved_at = now
+                self.fire_event(
+                    "moved",
+                    "This camera has been moved or covered - it is no "
+                    "longer watching what it was.",
+                    frame)
+
             moved, changed, boxes = self.motion.detect(frame)
             if moved:
                 self.last_motion_at = now
@@ -786,9 +803,14 @@ class CameraSession:
     # =====================================================================
     # events, clips, state
     # =====================================================================
+    # Kinds that get their own, longer gap: these are rare and serious, and
+    # should not be throttled by whatever else has been happening.
+    SLOW_KINDS = {"moved": 120.0}
+
     def fire_event(self, kind, detail, frame=None):
         now = time.time()
-        if now - self._event_times.get(kind, 0) < self.cfg.EVENT_MIN_GAP:
+        gap = self.SLOW_KINDS.get(kind, self.cfg.EVENT_MIN_GAP)
+        if now - self._event_times.get(kind, 0) < gap:
             return
         self._event_times[kind] = now
         self.rec.mark_event()
@@ -857,6 +879,8 @@ class CameraSession:
                             if self.last_motion_at else None),
             "silent_for_s": (round(now - self.last_sound_at)
                              if self.last_sound_at else None),
+            "moved_ago_s": (round(now - self.last_moved_at)
+                            if self.last_moved_at else None),
             "ptz": bool(getattr(self.ptz, "available", False)),
             "ptz_presets": list(getattr(self.ptz, "presets", []) or []),
             "lenses": [{"id": str(l.get("id")), "label": l.get("label", "")}

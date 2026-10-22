@@ -10,6 +10,11 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Only used to say where the phone is if somebody carries it off.
+         Everything else works without it. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <!-- This is what lets the camera keep running with the app in the
          background and the screen off, which a browser tab cannot do. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -20,6 +25,9 @@
 
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer"
+        android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 
     <application
         android:allowBackup="false"

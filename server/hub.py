@@ -31,7 +31,8 @@ from .notify import notifier
 STATE_FIELDS = (
     "status", "recording", "paused", "motion", "sound", "audio_level",
     "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
-    "quiet_for_s", "silent_for_s", "battery", "charging", "ptz",
+    "quiet_for_s", "silent_for_s", "moved_ago_s", "battery", "charging",
+    "location", "ptz",
     "ptz_presets", "lenses", "active_lens", "zoom", "has_audio",
     "has_speaker",
 )
@@ -78,8 +79,10 @@ class Camera:
             "retention_hours": None,
             "quiet_for_s": None,         # seconds since last motion
             "silent_for_s": None,        # seconds since last sound
+            "moved_ago_s": None,         # seconds since the camera was moved
             "battery": None,             # phone battery percent
             "charging": None,
+            "location": None,            # {lat, lon, accuracy_m, at} if known
             "ptz": False,                # camera can pan/tilt
             "ptz_presets": [],
             "lenses": [],                # selectable cameras on the device

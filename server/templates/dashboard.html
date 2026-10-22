@@ -124,6 +124,17 @@
   .stats { font-size: 11px; color: #6e7681; display: flex; gap: 9px; flex-wrap: wrap; }
   .stats .bad { color: #f85149; }
 
+  /* What the device itself is up to, as opposed to what it can see. */
+  .device { font-size: 11px; display: flex; gap: 10px; flex-wrap: wrap;
+            align-items: center; }
+  .device:empty { display: none; }
+  .device .bat { color: #8b949e; }
+  .device .bat.low { color: #f85149; font-weight: 600; }
+  .device .bat.chg { color: #3fb950; }
+  .device a { color: #58a6ff; text-decoration: none; }
+  .device a:hover { text-decoration: underline; }
+  .device .tamper { color: #ff7b72; font-weight: 600; }
+
   .empty {
     border: 1px dashed #30363d; border-radius: 12px; padding: 32px 20px;
     text-align: center; color: #8b949e;
@@ -144,7 +155,8 @@
            text-overflow: ellipsis; white-space: nowrap; }
   .ev .t { margin-left: auto; font-size: 11px; color: #6e7681;
            flex: 0 0 auto; text-align: right; }
-  .ev.k-impact .k, .ev.k-person .k { color: #ff7b72; }
+  .ev.k-impact .k, .ev.k-person .k, .ev.k-moved .k { color: #ff7b72; }
+  .ev.k-battery_low .k { color: #d29922; }
   .ev.k-cry .k { color: #ffa657; }
   .ev.k-offline .k { color: #d29922; }
 
@@ -235,7 +247,8 @@ const KIND_LABEL_DEVICE = {
 const KIND_LABEL = {
   motion: "Movement", sound: "Sound", cry: "Baby awake",
   impact: "Thud / fall", person: "Person seen", offline: "Camera offline",
-  online: "Camera online", disk: "Storage low", test: "Test alert"
+  online: "Camera online", disk: "Storage low", test: "Test alert",
+  moved: "Camera was moved", battery_low: "Battery low"
 };
 
 /* ---------- status socket ---------- */
@@ -623,6 +636,7 @@ function buildCard(c) {
         <input type="range" min="1" max="4" step="0.1" data-act="zoom">
       </div>
       <div class="btns presets" style="display:none"></div>
+      <div class="device"></div>
       <div class="stats"></div>
     </div>`;
 
@@ -780,11 +794,29 @@ function updateCard(el, c) {
                            { action: "preset", preset: b.dataset.preset }));
   }
 
-  const stats = [];
+  // The device's own condition: is it charged, where is it, has it been
+  // interfered with. Separate from what the camera can see, because when
+  // somebody is moving the camera itself this is the part you need.
+  const dev = [];
   if (c.battery != null) {
-    stats.push(`<span class="${c.battery < 20 && !c.charging ? "bad" : ""}">`
-      + `battery ${c.battery}%${c.charging ? " charging" : ""}</span>`);
+    const cls = c.charging ? "chg" : (c.battery < 25 ? "low" : "");
+    dev.push(`<span class="bat ${cls}">${batteryIcon(c.battery, c.charging)} `
+      + `${c.battery}%${c.charging ? " charging" : ""}</span>`);
   }
+  if (c.location && c.location.lat != null) {
+    const { lat, lon } = c.location;
+    const acc = c.location.accuracy_m != null
+      ? ` ±${Math.round(c.location.accuracy_m)}m` : "";
+    dev.push(`<a href="https://www.google.com/maps?q=${lat},${lon}"
+      target="_blank" rel="noopener">&#128205; ${lat.toFixed(5)}, `
+      + `${lon.toFixed(5)}${acc}</a>`);
+  }
+  if (c.moved_ago_s != null && c.moved_ago_s < 86400) {
+    dev.push(`<span class="tamper">&#9888; moved ${dur(c.moved_ago_s)} ago</span>`);
+  }
+  setHtml(q(".device"), dev.join(""));
+
+  const stats = [];
   if (c.disk_free_gb != null) stats.push(`<span>${c.disk_free_gb} GB free</span>`);
   if (c.clips) stats.push(`<span>${c.clips} clips on device</span>`);
   if (c.retention_hours) stats.push(`<span>${c.retention_hours}h kept</span>`);
@@ -825,6 +857,11 @@ function renderEvents() {
       </div>
       <div class="t">${esc(e.when)}</div>
     </div>`).join("");
+}
+
+function batteryIcon(pct, charging) {
+  if (charging) return "\u26A1";
+  return pct < 15 ? "\u{1FAAB}" : "\u{1F50B}";
 }
 
 function dur(s) {

@@ -203,6 +203,14 @@ let lastMotionAt = 0, lastSoundAt = 0, pendingKeep = new Set();
 let motionOn = false, soundOn = false, audioLevel = 0;
 let wakeLock = null;
 
+/* --- the device's own condition -------------------------------------
+   A camera quietly turned to face a wall protects nobody, so the phone
+   watches itself too: the accelerometer says when it has been picked up,
+   and the position says where it ended up if it is carried off. */
+let lastLocation = null, locationTimer = null;
+let restForce = 9.81, movingSince = 0, lastMovedAt = 0;
+let batteryWarned = false;
+
 const video = document.getElementById("preview");
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -565,12 +573,84 @@ function stopRecorder() {
 }
 
 /* =======================================================================
+   Watching the device itself
+   ======================================================================= */
+function startTamperWatch() {
+  if (!window.DeviceMotionEvent) return;
+  const begin = () => window.addEventListener("devicemotion", onMotion);
+  // iOS will not report motion until it is asked, and only from a tap.
+  if (typeof DeviceMotionEvent.requestPermission === "function") {
+    DeviceMotionEvent.requestPermission()
+      .then(r => { if (r === "granted") begin(); })
+      .catch(() => {});
+  } else {
+    begin();
+  }
+}
+
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  const force = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+
+  // Learn what "sitting still" weighs here, so it works whichever way up
+  // the phone is propped.
+  if (Math.abs(force - restForce) < 1.2) {
+    restForce = restForce * 0.98 + force * 0.02;
+  }
+
+  const now = Date.now();
+  if (Math.abs(force - restForce) > 2.5) {
+    if (!movingSince) movingSince = now;
+    // Held for a moment, so a passing lorry or a closing door is ignored.
+    if (now - movingSince > 900) {
+      movingSince = 0;
+      lastMovedAt = now;
+      refreshLocation();
+      fireEvent("moved",
+        "This phone has been picked up or moved from where you left it.");
+    }
+  } else {
+    movingSince = 0;
+  }
+}
+
+function refreshLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      lastLocation = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy_m: pos.coords.accuracy,
+        at: Math.round(Date.now() / 1000)
+      };
+    },
+    () => {},                       // refused or unavailable: carry on
+    { enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 }
+  );
+}
+
+function checkBattery() {
+  if (!battery) return;
+  const pct = Math.round(battery.level * 100);
+  if (!battery.charging && pct <= 15 && !batteryWarned) {
+    batteryWarned = true;
+    fireEvent("battery_low",
+      `This camera is down to ${pct}% and is not charging. It will stop `
+      + `recording when it dies.`);
+  }
+  if (battery.charging || pct > 25) batteryWarned = false;
+}
+
+/* =======================================================================
    Events
    ======================================================================= */
+const SLOW_KINDS = { moved: 120000, battery_low: 1800000 };
 let lastFired = {};
 function fireEvent(kind, detail) {
   const now = Date.now();
-  if (now - (lastFired[kind] || 0) < 25000) return;
+  if (now - (lastFired[kind] || 0) < (SLOW_KINDS[kind] || 25000)) return;
   lastFired[kind] = now;
   pendingKeep.add(kind);                 // this minute's clip is worth keeping
   send({ t: "event", kind, detail, thumb: grabThumb() });
@@ -815,6 +895,8 @@ function pushState() {
     silent_for_s: lastSoundAt ? Math.round((now - lastSoundAt) / 1000) : null,
     battery: battery ? Math.round(battery.level * 100) : null,
     charging: battery ? battery.charging : null,
+    location: lastLocation,
+    moved_ago_s: lastMovedAt ? Math.round((now - lastMovedAt) / 1000) : null,
     lenses: lenses,
     active_lens: activeLens,
     zoom: zoom,
@@ -902,6 +984,11 @@ async function start() {
   await houseKeep();
   connect();
 
+  // Asking now works because Start was a tap; asking later would be refused.
+  startTamperWatch();
+  refreshLocation();
+  locationTimer = setInterval(refreshLocation, 15 * 60 * 1000);
+
   // Keep the screen from sleeping, or the browser stops the camera.
   try {
     wakeLock = await navigator.wakeLock.request("screen");
@@ -924,7 +1011,8 @@ async function start() {
     analyseAudio();
   }, 350);
 
-  setInterval(() => { if (running) pushState(); }, STATE_EVERY);
+  setInterval(() => { if (running) { pushState(); checkBattery(); } },
+              STATE_EVERY);
   setInterval(() => { if (running) houseKeep(); }, 60000);
 }
 
@@ -935,7 +1023,9 @@ function stop() {
   if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   if (stream) stream.getTracks().forEach(t => t.stop());
   if (wakeLock) { try { wakeLock.release(); } catch (e) {} }
-  location.reload();
+  clearInterval(locationTimer);
+  window.removeEventListener("devicemotion", onMotion);
+  window.location.reload();
 }
 
 /* ---- buttons ---- */

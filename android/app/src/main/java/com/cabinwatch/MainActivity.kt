@@ -163,6 +163,11 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 !has(Manifest.permission.POST_NOTIFICATIONS)
             ) add(Manifest.permission.POST_NOTIFICATIONS)
+            // Optional: only so the dashboard can say where this phone is if
+            // it is taken. Refusing it costs nothing else.
+            if (!has(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
         }
         if (!save()) return
         if (needed.isNotEmpty()) {

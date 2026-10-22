@@ -67,7 +67,9 @@ internet.
 | **Person detection** | For the cabin, so a ceiling fan does not wake you at 3am. |
 | **Ignore regions** | Mask out a fan or a window onto the street. |
 | **Alerts on/off** | Disarm a camera when you are in the room yourself. |
-| **Device health** | Battery, charging state, free space, low-battery warning. |
+| **Device health** | Battery, charging, free space, and an alert before it dies. |
+| **Tamper alarm** | If a camera is moved, turned or covered, you are told - the phone feels it, every other camera sees its whole view change and stay changed. |
+| **Where a phone is** | Its position on the card, if it is carried off. |
 | **Clip browser** | List, play and save any recording straight off the device. |
 
 ---
@@ -373,6 +375,8 @@ device has recorded, to play or to save.
 | **Movement** | Something moved in view. |
 | **Person seen** | Movement that was also person-shaped — used for the cabin. |
 | **Sound** | Continuous noise that was not clearly a cry. |
+| **Camera was moved** | The camera itself was turned, knocked or covered. |
+| **Battery low** | A phone camera is about to die. |
 | **Camera offline** | It stopped reporting — power, internet or battery. |
 
 Cries, thuds, people and a camera going offline get through quiet hours. The

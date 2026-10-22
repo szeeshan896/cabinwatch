@@ -19,6 +19,12 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -93,6 +99,16 @@ class CameraService : LifecycleService(), WsClient.Events {
     private var audioTrack: AudioTrack? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // The phone watching itself. A camera quietly turned to face a wall
+    // protects nobody and says nothing, so being picked up is its own alarm,
+    // and where it ended up matters if it is carried off.
+    private var sensors: SensorManager? = null
+    private var restForce = 9.81f
+    private var movingSince = 0L
+    private var lastMovedAt = 0L
+    private var lastLocation: Location? = null
+    private var batteryWarned = false
+
     private val handler = Handler(Looper.getMainLooper())
 
     // What the dashboard has asked for right now.
@@ -152,6 +168,8 @@ class CameraService : LifecycleService(), WsClient.Events {
         startWebsocket()
         startCamera()
         startMic()
+        startTamperWatch()
+        refreshLocation()
         handler.post(stateTicker)
         handler.postDelayed(sweeper, 60_000)
 
@@ -166,6 +184,11 @@ class CameraService : LifecycleService(), WsClient.Events {
 
     private fun stopEverything() {
         handler.removeCallbacksAndMessages(null)
+        try {
+            sensors?.unregisterListener(motionWatcher)
+        } catch (_: Exception) {
+        }
+        sensors = null
         stopMic()
         stopSegment()
         try {
@@ -662,11 +685,112 @@ class CameraService : LifecycleService(), WsClient.Events {
     }
 
     // ======================================================================
+    // Watching the device itself
+    // ======================================================================
+    private val motionWatcher = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+        override fun onSensorChanged(event: SensorEvent) {
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+            val force = kotlin.math.sqrt(x * x + y * y + z * z)
+
+            // Learn what sitting still weighs, so it works whichever way up
+            // the phone is propped.
+            if (kotlin.math.abs(force - restForce) < 1.2f) {
+                restForce = restForce * 0.98f + force * 0.02f
+            }
+
+            val now = System.currentTimeMillis()
+            if (kotlin.math.abs(force - restForce) > 2.5f) {
+                if (movingSince == 0L) movingSince = now
+                // Held for a moment, so a slammed door does not count.
+                if (now - movingSince > 900) {
+                    movingSince = 0L
+                    lastMovedAt = now
+                    refreshLocation()
+                    fireEvent("moved",
+                        "This phone has been picked up or moved from where "
+                            + "you left it.", latestBitmap, 0)
+                }
+            } else {
+                movingSince = 0L
+            }
+        }
+    }
+
+    private fun startTamperWatch() {
+        if (sensors != null) return
+        try {
+            val sm = getSystemService(SensorManager::class.java) ?: return
+            val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            if (accel == null) {
+                Log.i(TAG, "no accelerometer; cannot tell if this is moved")
+                return
+            }
+            sm.registerListener(motionWatcher, accel,
+                SensorManager.SENSOR_DELAY_NORMAL)
+            sensors = sm
+        } catch (e: Exception) {
+            Log.w(TAG, "could not watch for movement: ${e.message}")
+        }
+    }
+
+    private fun hasLocationPermission() =
+        ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+    private fun refreshLocation() {
+        if (!hasLocationPermission()) return
+        try {
+            val lm = getSystemService(LocationManager::class.java) ?: return
+            // Last known is enough and costs no battery; this only has to
+            // say roughly where the phone is, not navigate to it.
+            for (p in listOf(LocationManager.GPS_PROVIDER,
+                             LocationManager.NETWORK_PROVIDER)) {
+                val fix = try {
+                    lm.getLastKnownLocation(p)
+                } catch (e: SecurityException) {
+                    null
+                }
+                if (fix != null &&
+                    (lastLocation == null || fix.time > lastLocation!!.time)
+                ) {
+                    lastLocation = fix
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read the location: ${e.message}")
+        }
+    }
+
+    private fun checkBattery() {
+        val pct = batteryPercent() ?: return
+        val charging = isCharging()
+        if (!charging && pct <= 15 && !batteryWarned) {
+            batteryWarned = true
+            fireEvent("battery_low",
+                "This camera is down to $pct% and is not charging. It will "
+                    + "stop recording when it dies.", latestBitmap, 0)
+        }
+        if (charging || pct > 25) batteryWarned = false
+    }
+
+    // ======================================================================
     // Events
     // ======================================================================
     private fun fireEvent(kind: String, detail: String, frame: Bitmap?, rotation: Int) {
         val now = System.currentTimeMillis()
-        if (now - (lastEventAt[kind] ?: 0L) < EVENT_MIN_GAP) return
+        // These are rare and serious, so they get their own, longer gap
+        // rather than being throttled by whatever else is happening.
+        val gap = when (kind) {
+            "moved" -> 120_000L
+            "battery_low" -> 1_800_000L
+            else -> EVENT_MIN_GAP
+        }
+        if (now - (lastEventAt[kind] ?: 0L) < gap) return
         lastEventAt[kind] = now
 
         clips.markKeep(currentClipName)
@@ -838,8 +962,14 @@ class CameraService : LifecycleService(), WsClient.Events {
     // Heartbeat
     // ======================================================================
     private val stateTicker = object : Runnable {
+        private var ticks = 0
+
         override fun run() {
             pushState()
+            checkBattery()
+            // Position changes slowly and costs battery to ask for, so it
+            // is refreshed every few minutes rather than every tick.
+            if (ticks++ % 150 == 0) refreshLocation()
             handler.postDelayed(this, 2000)
         }
     }
@@ -869,6 +999,16 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("silent_for_s", if (lastSoundAt > 0) (now - lastSoundAt) / 1000 else JSONObject.NULL)
             put("battery", battery ?: JSONObject.NULL)
             put("charging", isCharging())
+            put("moved_ago_s",
+                if (lastMovedAt > 0) (now - lastMovedAt) / 1000 else JSONObject.NULL)
+            put("location", lastLocation?.let {
+                JSONObject().apply {
+                    put("lat", it.latitude)
+                    put("lon", it.longitude)
+                    put("accuracy_m", it.accuracy.toDouble())
+                    put("at", it.time / 1000)
+                }
+            } ?: JSONObject.NULL)
             put("lenses", lensLabels)
             put("active_lens", settings.lensIndex.toString())
             put("zoom", (camera?.cameraInfo?.zoomState?.value?.zoomRatio
