@@ -32,7 +32,7 @@ STATE_FIELDS = (
     "status", "recording", "paused", "motion", "sound", "audio_level",
     "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
     "quiet_for_s", "silent_for_s", "moved_ago_s", "battery", "charging",
-    "location", "ptz",
+    "location", "noise_filter", "ptz",
     "ptz_presets", "lenses", "active_lens", "zoom", "has_audio",
     "has_speaker",
 )
@@ -73,6 +73,7 @@ class Camera:
             "sound": False,
             "audio_level": 0.0,
             "baby_mode": False,
+            "noise_filter": True,
             "armed": True,
             "disk_free_gb": None,
             "clips": 0,

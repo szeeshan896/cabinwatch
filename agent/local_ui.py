@@ -143,6 +143,8 @@ class ControlPanel:
                 "source": conf.get("source"),
                 "audio_device": conf.get("audio_device"),
                 "baby_mode": bool(conf.get("baby_mode")),
+                "noise_filter": bool(conf.get(
+                    "noise_filter", data.get("noise_filter", True))),
                 "segment_seconds": conf.get(
                     "segment_seconds", data.get("segment_seconds", 300)),
                 # live, only when that camera is actually running
@@ -278,6 +280,8 @@ class ControlPanel:
                     conf.pop("audio_device", None)
                 else:
                     conf["audio_device"] = int(mic) if str(mic).isdigit() else mic
+            if "noise_filter" in incoming:
+                conf["noise_filter"] = bool(incoming["noise_filter"])
             if "baby_mode" in incoming:
                 conf["baby_mode"] = bool(incoming["baby_mode"])
                 # Keep the two modes' defaults honest when it is switched.
@@ -571,6 +575,12 @@ function renderCams() {
             <option value="0" ${c.baby_mode ? '' : 'selected'}>A cabin or office &mdash; alert only on a person</option>
           </select>
 
+          <label>Background noise</label>
+          <select id="noise-${c.id}">
+            <option value="1" ${c.noise_filter ? 'selected' : ''}>Cut fan and cooler noise &mdash; the baby is easier to hear</option>
+            <option value="0" ${c.noise_filter ? '' : 'selected'}>Leave the sound untouched</option>
+          </select>
+
           <div style="margin-top:12px">
             <button class="alt" onclick="test('${c.id}')">Test the selected camera</button>
           </div>
@@ -651,7 +661,8 @@ async function save() {
       name: document.getElementById('nm-' + c.id).value,
       source: document.getElementById('src-' + c.id).value,
       audio_device: document.getElementById('mic-' + c.id).value,
-      baby_mode: document.getElementById('baby-' + c.id).value === '1'
+      baby_mode: document.getElementById('baby-' + c.id).value === '1',
+      noise_filter: document.getElementById('noise-' + c.id).value === '1'
     }))
   };
   try {

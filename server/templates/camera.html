@@ -322,7 +322,7 @@ async function openStream(deviceId) {
       : { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: {
       echoCancellation: false,   // we want to hear the room as it is
-      noiseSuppression: false,
+      noiseSuppression: noiseFilter,
       autoGainControl: false
     }
   };
@@ -379,6 +379,9 @@ function detectMotion() {
    ======================================================================= */
 let audioCtx = null, analyser = null, freqData = null, timeData = null;
 let micSource = null, micNode = null;
+// A fan or cooler is steady noise; the browser's own suppressor is built for
+// exactly that, and leaves the voice band where a cry sits.
+let noiseFilter = true;
 let baseline = 0.004, loudSince = 0;
 
 function startAudioAnalysis() {
@@ -456,6 +459,25 @@ function analyseAudio() {
 }
 
 /* ---- sending our mic up to the dashboard (Listen) ---- */
+// Changing it on the open track is instant; only if the browser refuses the
+// constraint do we reopen the microphone, which costs a gap in the audio.
+async function applyNoiseFilter() {
+  const track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
+  if (!track) return;
+  try {
+    await track.applyConstraints({ noiseSuppression: noiseFilter });
+    return;
+  } catch (e) {
+    log("fan filter needs the mic reopened");
+  }
+  try {
+    if (running) await switchLens(activeLens);
+  } catch (e) {
+    log("fan filter could not be changed: " + e.message);
+    noiseFilter = !noiseFilter;
+  }
+}
+
 function startAudioSend() {
   if (!audioCtx || micNode) return;
   const size = 4096;
@@ -798,6 +820,11 @@ async function handle(m) {
       }
       pushState();
       break;
+    case "noise_filter":
+      noiseFilter = !!m.on;
+      await applyNoiseFilter();
+      pushState();
+      break;
     case "baby_mode":
       babyMode = !!m.on; pushState(); break;
     case "arm":
@@ -902,6 +929,7 @@ function pushState() {
     zoom: zoom,
     has_audio: true,
     has_speaker: true,
+    noise_filter: noiseFilter,
     ptz: false
   });
   paintStats();

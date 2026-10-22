@@ -48,6 +48,7 @@ import ptz as ptz_mod
 import setup_wizard
 import local_ui
 from resample import Resampler
+from denoise import NoiseSuppressor
 from recorder import Recorder
 from detect import (MotionDetector, PersonDetector, SoundDetector,
                     SceneChangeDetector)
@@ -165,6 +166,14 @@ class CameraSession:
                 "tamper_hold_seconds",
                 getattr(cfg, "TAMPER_HOLD_SECONDS", 4.0)),
         ) if conf.get("tamper_detection", True) else None
+
+        # A cooler or fan never stops, which buries the child both for
+        # listening and for the alerts - the detector learns the room's
+        # level, the fan lifts it, and a cry then has to be far louder than
+        # it should to count. Taking the steady part out fixes both.
+        self.denoise = bool(conf.get("noise_filter",
+                                     getattr(cfg, "NOISE_FILTER", True)))
+        self._suppressor = None
 
         self.sound = SoundDetector(
             rate=AUDIO_RATE,
@@ -437,6 +446,14 @@ class CameraSession:
 
         elif t == "arm":
             self.armed = bool(m.get("on"))
+            self.push_state()
+
+        elif t == "noise_filter":
+            self.denoise = bool(m.get("on"))
+            self._suppressor = (NoiseSuppressor(rate=AUDIO_RATE)
+                                if self.denoise else None)
+            print(f"[{self.cam_id}] noise filter "
+                  f"{'on' if self.denoise else 'off'}")
             self.push_state()
 
         elif t == "lens":
@@ -735,10 +752,20 @@ class CameraSession:
             # down into the voice band - harsh, metallic speech, and energy
             # the cry detector never heard. This filters first.
             resampler = Resampler(rate, AUDIO_RATE)
+            self._suppressor = (NoiseSuppressor(rate=AUDIO_RATE)
+                                if self.denoise else None)
+            if self._suppressor is not None:
+                print(f"[{self.cam_id}] noise filter on - steady fan or "
+                      f"cooler noise is removed before anything listens")
             with stream:
                 while not self._stop.is_set():
                     raw, overflowed = stream.read(block)
                     mono = resampler.process(raw[:, 0])
+                    if self._suppressor is not None and mono.size:
+                        # Everything downstream - the alerts, the live
+                        # listen and the saved clip - gets the cleaned
+                        # sound, so they all agree on what was heard.
+                        mono = self._suppressor.process(mono)
 
                     n = len(mono)
                     if n == 0:
@@ -890,6 +917,7 @@ class CameraSession:
                        for l in self.lenses],
             "active_lens": self.active_lens,
             "zoom": self.zoom,
+            "noise_filter": bool(self.denoise),
             "has_audio": bool(self.audio_enabled),
             "has_speaker": bool(self.speaker_enabled),
         })

@@ -627,6 +627,7 @@ function buildCard(c) {
         <button data-act="baby">Baby</button>
         <button data-act="arm">Alerts</button>
         <button data-act="clips">Clips</button>
+        <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
       </div>
       <div class="inline lensrow" style="display:none">
         <label>Lens</label><select data-act="lens"></select>
@@ -673,6 +674,10 @@ function buildCard(c) {
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id);
+  };
+  act("noise").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    cmd(id, "noise", { on: !c2.noise_filter });
   };
   act("lens").onchange = (e) => {
     setPending(id, "lens", e.target.value);
@@ -749,6 +754,12 @@ function updateCard(el, c) {
   rec.classList.toggle("active", !!c.paused);
   q('[data-act="baby"]').classList.toggle("active", !!c.baby_mode);
   q('[data-act="arm"]').classList.toggle("active", !!c.armed);
+
+  // The filter only has a say over the microphone, so a camera without one
+  // cannot use it.
+  const noise = q('[data-act="noise"]');
+  noise.classList.toggle("active", !!c.noise_filter);
+  noise.disabled = !c.has_audio;
 
   // A dropdown is only rebuilt when its choices actually change, and never
   // while it is open - otherwise it shuts the moment you reach for it.

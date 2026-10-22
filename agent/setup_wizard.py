@@ -66,6 +66,7 @@ class JsonConfig:
         self.CRY_SECONDS = float(d.get("cry_seconds", 1.2))
         self.EVENT_MIN_GAP = float(d.get("event_min_gap", 25.0))
         self.TAMPER_HOLD_SECONDS = float(d.get("tamper_hold_seconds", 4.0))
+        self.NOISE_FILTER = bool(d.get("noise_filter", True))
 
         self.AUDIO_DEVICE = d.get("audio_device")
         self.SPEAKER_DEVICE = d.get("speaker_device")

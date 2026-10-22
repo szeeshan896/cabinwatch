@@ -15,6 +15,7 @@ false alarms you stop trusting your phone. So:
 """
 
 import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -264,75 +265,129 @@ class SceneChangeDetector:
 
 
 class SoundDetector:
-    """Turns a stream of microphone samples into sound / cry / thud events.
+    """Turns microphone samples into a cry, a thud, or ordinary noise.
 
-    Thresholds are relative to a baseline the detector learns from the quiet
-    stretches, so a noisy room and a silent nursery both end up sensible
-    without you tuning numbers.
+    Two things here were learned the hard way.
+
+    A cry is not a continuous sound. A baby wails, draws breath, wails again.
+    Requiring it to be loud without a break for over a second - which is what
+    this did at first - means a real cry resets the counter every time he
+    inhales, and no alert is ever sent. So loudness is counted over a window
+    instead: loud for enough of the last few seconds, gaps and all.
+
+    And the threshold is relative to what the room normally sounds like,
+    which is what lets it work in a nursery and next to a cooler without
+    anybody tuning numbers. The absolute floor underneath it only exists to
+    stop a silent room from alerting on its own hiss, so it has to stay low
+    enough not to become the real threshold once a noise filter has pulled
+    the levels down.
     """
 
-    def __init__(self, rate=16000, sensitivity=1.0, cry_seconds=1.2,
-                 quiet_floor=0.0008):
+    def __init__(self, rate=16000,
+                 sensitivity=1.0, cry_seconds=1.0, quiet_floor=0.0008,
+                 window_seconds=3.0, absolute_floor=0.0035, clock=None):
         self.rate = int(rate)
+        # The clock is a parameter only so that a test can feed in eight
+        # seconds of a crying baby without waiting eight seconds.
+        self._clock = clock or time.time
         self.sensitivity = max(0.2, float(sensitivity))
         self.cry_seconds = float(cry_seconds)
         self.quiet_floor = float(quiet_floor)
+        self.window_seconds = float(window_seconds)
+        self.absolute_floor = float(absolute_floor)
 
         self.baseline = 0.004
         self.level = 0.0
         self.loud = False
-        self._loud_since = 0.0
+
+        # (when, was_loud, voice_share) for the last few seconds.
+        self._recent = deque()
         self._last_impact = 0.0
+        self._last_call = 0.0
 
-    def feed(self, samples):
-        """Feed a block of float32 mono samples. Returns an event kind or None.
+    def feed(self, samples, count=None):
+        """Feed a block of mono samples in -1..1. Returns an event or None.
 
-        Possible returns: "impact", "cry", "sound", or None.
+        Call it as the audio arrives: how long a sound has been going on is
+        measured in real time.
         """
-        if samples is None or len(samples) == 0:
+        x = np.asarray(samples, dtype=np.float32).reshape(-1)
+        if count is not None:
+            x = x[:count]
+        if x.size == 0:
             return None
 
-        x = np.asarray(samples, dtype=np.float32).reshape(-1)
         rms = float(np.sqrt(np.mean(x * x)) + 1e-12)
         self.level = rms
 
-        # Learn the room's quiet level, but only from quiet blocks.
+        # Learn what quiet sounds like here, but only from quiet blocks.
         if rms < self.baseline * 2.0:
             self.baseline = self.baseline * 0.995 + rms * 0.005
         self.baseline = max(self.baseline, self.quiet_floor)
 
-        # Where is the energy? A cry sits in the voice band; a thud is mostly
-        # low frequency; a fan or AC hum is low frequency but steady.
-        win = x * np.hanning(len(x))
-        spec = np.abs(np.fft.rfft(win)) ** 2
-        freqs = np.fft.rfftfreq(len(win), 1.0 / self.rate)
-        total = float(spec.sum()) + 1e-12
-        low = float(spec[freqs < 250].sum()) / total
-        voice = float(spec[(freqs >= 250) & (freqs < 2500)].sum()) / total
+        bands = self._bands(x)
+        low, voice = bands[0], bands[1]
 
-        trigger = max(self.baseline * 4.5 / self.sensitivity, 0.010)
+        sens = self.sensitivity
+        trigger = max(self.baseline * 4.5 / sens, self.absolute_floor / sens)
         self.loud = rms > trigger
-        now = time.time()
+        now = self._clock()
 
-        if self.loud:
-            if not self._loud_since:
-                self._loud_since = now
-        else:
-            self._loud_since = 0.0
-            return None
+        self._recent.append((now, self.loud, voice))
+        cutoff = now - self.window_seconds
+        while self._recent and self._recent[0][0] < cutoff:
+            self._recent.popleft()
 
-        # A fall: very sudden, very loud, dominated by the low end.
+        # A fall: sudden, very loud, and dominated by the low end.
         if (rms > max(self.baseline * 14, 0.085) and low > 0.45
                 and now - self._last_impact > 5):
             self._last_impact = now
-            self._loud_since = 0.0
+            self._recent.clear()
             return "impact"
 
-        held = now - self._loud_since
-        if held >= self.cry_seconds and voice > 0.42:
-            self._loud_since = 0.0
+        if not self.loud:
+            return None
+
+        loud_time, voice_time = self._loud_span()
+        if loud_time < self.cry_seconds:
+            return None
+
+        # Was it voice-shaped for most of the time it was loud?
+        if voice_time >= loud_time * 0.6:
+            self._recent.clear()
             return "cry"
-        if held >= 2.5:
-            self._loud_since = 0.0
+        if loud_time >= self.cry_seconds * 2:
+            self._recent.clear()
             return "sound"
         return None
+
+    def _loud_span(self):
+        """Seconds of loudness in the window, and how much of it was voice."""
+        if len(self._recent) < 2:
+            return 0.0, 0.0
+        loud_time = voice_time = 0.0
+        for i in range(1, len(self._recent)):
+            t0, was_loud, share = self._recent[i - 1]
+            dt = self._recent[i][0] - t0
+            if was_loud:
+                loud_time += dt
+                if share > 0.42:
+                    voice_time += dt
+        return loud_time, voice_time
+
+    def _bands(self, x):
+        """[below 250 Hz, 250-2500 Hz] as fractions of total energy."""
+        n = 1
+        while n * 2 <= len(x):
+            n *= 2
+        n = min(n, 2048)
+        if n < 64:
+            return 0.0, 0.0
+
+        win = x[:n] * np.hanning(n)
+        spec = np.abs(np.fft.rfft(win)) ** 2
+        freqs = np.fft.rfftfreq(n, 1.0 / self.rate)
+        total = float(spec.sum()) + 1e-12
+        low = float(spec[freqs < 250].sum()) / total
+        voice = float(spec[(freqs >= 250) & (freqs < 2500)].sum()) / total
+        return low, voice

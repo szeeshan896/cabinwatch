@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
         b.etToken.setText(settings.token)
         b.etName.setText(settings.cameraName)
         b.swBaby.isChecked = settings.babyMode
+        b.swNoise.isChecked = settings.noiseFilter
         b.swRecordAudio.isChecked = settings.recordAudio
         b.swBoot.isChecked = settings.startOnBoot
         b.spRetention.setSelection(
@@ -112,6 +113,7 @@ class MainActivity : AppCompatActivity() {
         // second one appearing.
         settings.cameraId
         settings.babyMode = b.swBaby.isChecked
+        settings.noiseFilter = b.swNoise.isChecked
         settings.recordAudio = b.swRecordAudio.isChecked
         settings.startOnBoot = b.swBoot.isChecked
         settings.retentionHours = retentionChoices[b.spRetention.selectedItemPosition]

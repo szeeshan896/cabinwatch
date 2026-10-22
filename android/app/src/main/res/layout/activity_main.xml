@@ -82,6 +82,11 @@
             android:text="@string/sw_baby" />
 
         <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/swNoise"
+            style="@style/Toggle"
+            android:text="@string/sw_noise" />
+
+        <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/swRecordAudio"
             style="@style/Toggle"
             android:text="@string/sw_record_audio" />

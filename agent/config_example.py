@@ -58,6 +58,12 @@ EVENT_MIN_GAP = 25.0        # seconds between two alerts of the same kind
 # to), lower it to be told sooner.
 TAMPER_HOLD_SECONDS = 4.0
 
+# Remove steady fan or cooler noise before anything listens. A fan is loud
+# and never stops, which both buries the child when you listen in and raises
+# the level the cry detector measures against, so a real cry stops counting.
+# Any camera can turn it off with "noise_filter": False.
+NOISE_FILTER = True
+
 # Microphone and speaker. None = the system default. Numbers come from
 # "python agent/agent.py --list-cameras".
 AUDIO_DEVICE = None

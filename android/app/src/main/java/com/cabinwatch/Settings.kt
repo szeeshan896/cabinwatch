@@ -74,6 +74,18 @@ class Settings(context: Context) {
         get() = sp.getBoolean(K_RECAUDIO, false)
         set(v) = sp.edit().putBoolean(K_RECAUDIO, v).apply()
 
+    /**
+     * Cut steady background noise - a fan, a cooler, an air conditioner - so
+     * the baby can be heard over it, both by you and by the crying alert.
+     *
+     * On by default. It uses the phone's own voice-call noise cleaner, which
+     * is built for exactly this kind of steady hum and leaves the band a
+     * cry sits in alone.
+     */
+    var noiseFilter: Boolean
+        get() = sp.getBoolean(K_NOISE, true)
+        set(v) = sp.edit().putBoolean(K_NOISE, v).apply()
+
     var soundSensitivity: Float
         get() = sp.getFloat(K_SENS, 1.0f)
         set(v) = sp.edit().putFloat(K_SENS, v).apply()
@@ -105,6 +117,7 @@ class Settings(context: Context) {
         private const val K_RETENTION = "retention_hours"
         private const val K_MAXMB = "max_storage_mb"
         private const val K_RECAUDIO = "record_audio"
+        private const val K_NOISE = "noise_filter"
         private const val K_SENS = "sound_sensitivity"
         private const val K_MOTION = "motion_sensitivity"
         private const val K_BOOT = "start_on_boot"

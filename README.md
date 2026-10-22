@@ -366,6 +366,26 @@ camera's speaker. **Baby** turns sound alerts on for that camera. **Alerts**
 disarms it when you are in the room yourself. **Clips** lists everything the
 device has recorded, to play or to save.
 
+### The fan filter
+
+A ceiling fan or a cooler in the room is the one thing that defeats a baby
+monitor. It is loud, it never stops, and it sits right on top of the sound you
+are listening for — so you hear a motor instead of the child, and the alert
+never fires because the room's noise level is already high.
+
+**Fan filter** on a camera's card deals with that. A fan is *steady*: it holds
+the same frequencies minute after minute, while a voice moves around and comes
+and goes. So the steady part is measured and taken out, and what is left is
+whatever is not the fan. On the measurements in `tests/test_noise_filter.py`,
+a cry that sat 9 dB *under* a cooler comes out 11 dB *over* it, and the cooler
+itself drops by around 11 dB. A cooler that is switched on later gets learned
+within about three seconds.
+
+It is on by default everywhere — the laptop agent, the browser page and the
+Android app. On the phone and in the browser it is the device's own voice-call
+noise cleaner, which also stops the speaker feeding back while you talk. Turn
+it off if you would rather hear the room exactly as it is.
+
 ### What each alert means
 
 | Alert | What set it off |

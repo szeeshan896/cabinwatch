@@ -41,6 +41,7 @@ SIMPLE_COMMANDS = {
     "record":  "record",        # {"on": bool}
     "baby":    "baby_mode",     # {"on": bool}
     "arm":     "arm",           # {"on": bool}
+    "noise":   "noise_filter",  # {"on": bool} - drop steady fan noise
     "lens":    "lens",          # {"id": "<device id>"} - switch front/back
     "zoom":    "zoom",          # {"value": 1.0 .. 4.0} - digital zoom
     "ptz":     "ptz",           # {"action": "left"|"right"|"up"|"down"|

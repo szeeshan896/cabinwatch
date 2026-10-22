@@ -17,6 +17,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.audiofx.NoiseSuppressor
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.hardware.Sensor
@@ -558,13 +559,35 @@ class CameraService : LifecycleService(), WsClient.Events {
         audioRunning.set(true)
         audioThread = Thread {
             var rec: AudioRecord? = null
+            var suppressor: NoiseSuppressor? = null
             try {
                 val minBuf = AudioRecord.getMinBufferSize(
                     Protocol.AUDIO_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT
                 )
-                rec = AudioRecord(
+                // The voice-call source is the one the phone cleans up: it
+                // strips a fan or cooler and cancels our own speaker, so
+                // talking does not feed back. Raw MIC gives the room as it is.
+                val source = if (settings.noiseFilter) {
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION
+                } else {
+                    MediaRecorder.AudioSource.MIC
+                }
+                rec = try {
+                    AudioRecord(
+                        source,
+                        Protocol.AUDIO_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        minBuf.coerceAtLeast(4096) * 2
+                    ).takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+                } catch (e: Exception) {
+                    Log.w(TAG, "microphone source $source refused: ${e.message}")
+                    null
+                } ?: AudioRecord(
+                    // Not every phone offers the voice-call source; fall back
+                    // rather than lose the microphone altogether.
                     MediaRecorder.AudioSource.MIC,
                     Protocol.AUDIO_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
@@ -575,8 +598,9 @@ class CameraService : LifecycleService(), WsClient.Events {
                     Log.w(TAG, "microphone not available")
                     return@Thread
                 }
+                suppressor = openSuppressor(rec, settings.noiseFilter)
                 rec.startRecording()
-                Log.i(TAG, "microphone open")
+                Log.i(TAG, "microphone open (filter=${settings.noiseFilter})")
 
                 val shorts = ShortArray(1024)
                 val floats = FloatArray(1024)
@@ -606,6 +630,11 @@ class CameraService : LifecycleService(), WsClient.Events {
                 Log.w(TAG, "microphone loop ended: ${e.message}")
             } finally {
                 try {
+                    suppressor?.release()
+                } catch (_: Exception) {
+                }
+                suppressor = null
+                try {
                     rec?.stop(); rec?.release()
                 } catch (_: Exception) {
                 }
@@ -613,10 +642,33 @@ class CameraService : LifecycleService(), WsClient.Events {
         }.also { it.isDaemon = true; it.start() }
     }
 
+    /**
+     * Some phones expose the noise cleaner as an effect on top of the
+     * recording instead of in the source, so ask for that too. Missing is
+     * normal and not worth a complaint in the log.
+     */
+    private fun openSuppressor(rec: AudioRecord, wanted: Boolean): NoiseSuppressor? {
+        if (!wanted) return null
+        return try {
+            if (!NoiseSuppressor.isAvailable()) return null
+            NoiseSuppressor.create(rec.audioSessionId)?.also { it.enabled = true }
+        } catch (e: Exception) {
+            Log.i(TAG, "no noise suppressor effect: ${e.message}")
+            null
+        }
+    }
+
     private fun stopMic() {
         audioRunning.set(false)
-        audioThread?.interrupt()
+        val thread = audioThread
         audioThread = null
+        thread?.interrupt()
+        // A read in flight is not interruptible, so wait for it to hand the
+        // microphone back. Opening a second one on top would fail instead.
+        try {
+            thread?.join(1000)
+        } catch (_: InterruptedException) {
+        }
     }
 
     private fun handleSoundEvent(event: SoundDetector.Event) {
@@ -871,6 +923,14 @@ class CameraService : LifecycleService(), WsClient.Events {
                     pushState()
                 }
             }
+            // The filter is chosen when the microphone is opened, so it has
+            // to be reopened for the change to take effect.
+            "noise_filter" -> {
+                settings.noiseFilter = msg.optBoolean("on")
+                stopMic()
+                startMic()
+                pushState()
+            }
             "baby_mode" -> {
                 settings.babyMode = msg.optBoolean("on"); pushState()
             }
@@ -991,6 +1051,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("sound", sound.loud)
             put("audio_level", Math.round(sound.level * 1000.0) / 1000.0)
             put("baby_mode", settings.babyMode)
+            put("noise_filter", settings.noiseFilter)
             put("armed", settings.armed)
             put("clips", clips.count())
             put("disk_free_gb", clips.freeGb())
