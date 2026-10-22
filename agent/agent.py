@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ptz as ptz_mod
 import setup_wizard
 import local_ui
+from resample import Resampler
 from recorder import Recorder
 from detect import MotionDetector, PersonDetector, SoundDetector
 
@@ -705,27 +706,19 @@ class CameraSession:
                 last = e
         raise last if last else RuntimeError("no microphone")
 
-    @staticmethod
-    def _to_16k(mono, rate):
-        """Straight-line resample to the one rate everything else expects."""
-        if rate == AUDIO_RATE or len(mono) == 0:
-            return mono
-        want = max(1, int(round(len(mono) * AUDIO_RATE / rate)))
-        return np.interp(
-            np.linspace(0.0, len(mono) - 1, want, dtype=np.float64),
-            np.arange(len(mono), dtype=np.float64),
-            mono.astype(np.float64),
-        ).astype(np.float32)
-
     def audio_loop(self):
         if not self.audio_enabled:
             return
         try:
             stream, rate, block = self._open_microphone()
+            # Taking every third sample would alias everything above 8 kHz
+            # down into the voice band - harsh, metallic speech, and energy
+            # the cry detector never heard. This filters first.
+            resampler = Resampler(rate, AUDIO_RATE)
             with stream:
                 while not self._stop.is_set():
                     raw, overflowed = stream.read(block)
-                    mono = self._to_16k(raw[:, 0], rate)
+                    mono = resampler.process(raw[:, 0])
 
                     n = len(mono)
                     if n == 0:

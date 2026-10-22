@@ -112,6 +112,7 @@ jobs:
           --hidden-import config_example
           --hidden-import muxer
           --hidden-import local_ui
+          --hidden-import resample
           --collect-all numpy
           --collect-all cv2
           --collect-all sounddevice
