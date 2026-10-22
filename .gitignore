@@ -41,3 +41,6 @@ agent/cabinwatch.json
 build/
 dist/
 *.spec
+
+# Rendered UI previews (regenerated on demand)
+ui-preview/

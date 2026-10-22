@@ -203,6 +203,7 @@ class CameraSession:
         self.connected = False
         self._cancelled_xfers = set()
 
+        self._explained = set()
         self._stop = threading.Event()
         self.threads = []
 
@@ -289,39 +290,77 @@ class CameraSession:
             self._explain(code)
 
     def _on_error(self, ws, error):
-        # A wrong token or a bad camera id is refused during the handshake,
-        # so it arrives here as an HTTP status rather than a close code. Say
-        # so plainly - otherwise all the operator sees is "reconnecting".
+        # The handshake is refused before the websocket opens, so the reason
+        # arrives as an HTTP status rather than a close code. Each status
+        # means something quite different and sending someone after the wrong
+        # one costs them an afternoon, so keep them apart.
         status = getattr(error, "status_code", None)
-        if status == 403:
-            self._explain(4401)
-        elif status in (400, 404):
-            self._explain(4400)
-        elif status is not None:
-            print(f"[{self.cam_id}] server refused the connection "
-                  f"(HTTP {status}). Is SERVER_URL correct?")
-        elif isinstance(error, (socket.gaierror, ConnectionRefusedError)):
-            print(f"[{self.cam_id}] cannot reach {self.server} - "
-                  f"check the address and this machine's internet.")
 
-    _explained = set()
+        if status == 403:
+            # The server rejected us before accepting. It does that for a bad
+            # token and for a bad camera id alike, and from out here the two
+            # look the same, so name both rather than guess.
+            self._explain(4401)
+        elif status == 404:
+            # Nothing is serving this path. Almost always the address is
+            # wrong, or the host is up but the app is not running yet - a
+            # hosting platform answers 404 for a service that never started.
+            self._explain_once(
+                "404",
+                f"[{self.cam_id}] NOT FOUND at {self.server}\n"
+                f"    Nothing is answering there yet. Either the address is\n"
+                f"    wrong, or the server has not finished deploying.\n"
+                f"    Open {self.server}/healthz in a browser: it should say "
+                f"'ok'.\n"
+                f"    This camera keeps recording locally and will connect by\n"
+                f"    itself once the server answers."
+            )
+        elif status in (500, 502, 503, 504):
+            self._explain_once(
+                "5xx",
+                f"[{self.cam_id}] the server is reachable but not healthy "
+                f"(HTTP {status}). It may still be starting up."
+            )
+        elif status is not None:
+            self._explain_once(
+                str(status),
+                f"[{self.cam_id}] server refused the connection "
+                f"(HTTP {status}). Is the address right?"
+            )
+        elif isinstance(error, (socket.gaierror, ConnectionRefusedError)):
+            self._explain_once(
+                "unreachable",
+                f"[{self.cam_id}] cannot reach {self.server} - check the "
+                f"address and this machine's internet."
+            )
+
+    def _explain_once(self, key, message):
+        # Print each distinct reason once; the retry loop stays quiet after.
+        if key in self._explained:
+            return
+        self._explained.add(key)
+        print(message)
 
     def _explain(self, code):
-        # Print each distinct reason once; the loop keeps retrying quietly.
-        if code in self._explained:
-            return
-        self._explained.add(code)
         if code == 4401:
-            print(f"[{self.cam_id}] REFUSED: the server did not accept the "
-                  f"token.\n"
-                  f"    AGENT_TOKEN in agent/config.py must be character for "
-                  f"character the same as\n"
-                  f"    the AGENT_TOKEN variable on your Railway service.")
+            self._explain_once(
+                "4401",
+                f"[{self.cam_id}] REFUSED by the server.\n"
+                f"    Either the token does not match, or '{self.cam_id}' is "
+                f"not a usable camera id.\n"
+                f"    The token must be character for character the same as "
+                f"the AGENT_TOKEN\n"
+                f"    variable on your server. A camera id may only contain "
+                f"letters, numbers,\n"
+                f"    - and _ ."
+            )
         elif code == 4400:
-            print(f"[{self.cam_id}] REFUSED: '{self.cam_id}' is not a usable "
-                  f"camera id.\n"
-                  f"    Use only letters, numbers, - and _ for the keys in "
-                  f"CAMERAS.")
+            self._explain_once(
+                "4400",
+                f"[{self.cam_id}] REFUSED: '{self.cam_id}' is not a usable "
+                f"camera id.\n"
+                f"    Use only letters, numbers, - and _ ."
+            )
 
     def _on_message(self, ws, message):
         if isinstance(message, (bytes, bytearray)):

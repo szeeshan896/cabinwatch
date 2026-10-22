@@ -85,6 +85,7 @@
   }
   .pad button:active { background: #1f6feb; }
   .pad .mid { font-size: 10px; letter-spacing: .3px; }
+  .pad i { display: block; }          /* corner spacers, nothing to press */
 
   .meter { height: 4px; background: #21262d; }
   .meter > i { display: block; height: 100%; background: #3fb950; width: 0;
@@ -527,11 +528,11 @@ function render() {
 
     const pad = (mode !== "off" && c.ptz) ? `
       <div class="pad">
-        <button></button>
+        <i></i>
         <button onpointerdown="ptzStart('${c.id}','up')"
                 onpointerup="ptzStop('${c.id}')"
                 onpointerleave="ptzStop('${c.id}')">&#9650;</button>
-        <button></button>
+        <i></i>
         <button onpointerdown="ptzStart('${c.id}','left')"
                 onpointerup="ptzStop('${c.id}')"
                 onpointerleave="ptzStop('${c.id}')">&#9664;</button>
@@ -539,11 +540,11 @@ function render() {
         <button onpointerdown="ptzStart('${c.id}','right')"
                 onpointerup="ptzStop('${c.id}')"
                 onpointerleave="ptzStop('${c.id}')">&#9654;</button>
-        <button></button>
+        <i></i>
         <button onpointerdown="ptzStart('${c.id}','down')"
                 onpointerup="ptzStop('${c.id}')"
                 onpointerleave="ptzStop('${c.id}')">&#9660;</button>
-        <button></button>
+        <i></i>
       </div>` : "";
 
     // "Still for 23 min" is the quickest read on whether a baby is asleep.

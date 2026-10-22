@@ -113,6 +113,16 @@ class PersonDetector:
             except Exception as e:
                 print(f"[detect] could not load the SSD model ({e}), "
                       f"falling back to the built-in detector")
+        if not hasattr(cv2, "HOGDescriptor"):
+            # OpenCV 5 removed it from the Python bindings.
+            print(f"[detect] person detection needs OpenCV 4.x, but this "
+                  f"machine has {cv2.__version__}.")
+            print("[detect] This camera will alert on ANY movement, so a fan "
+                  "or a curtain can set it off.")
+            print("[detect] Fix:  pip install \"opencv-python>=4.9,<5\"")
+            self.enabled = False
+            return
+
         try:
             self._hog = cv2.HOGDescriptor()
             self._hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
@@ -120,6 +130,7 @@ class PersonDetector:
             print("[detect] person detection: built-in HOG")
         except Exception as e:
             print(f"[detect] person detection unavailable: {e}")
+            print("[detect] This camera will alert on ANY movement.")
             self.enabled = False
 
     def contains_person(self, frame):
