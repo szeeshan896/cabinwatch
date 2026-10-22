@@ -1,1 +1,1 @@
-web: uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --ws websockets --timeout-keep-alive 75
+web: uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8080} --ws websockets --timeout-keep-alive 75

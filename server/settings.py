@@ -85,7 +85,7 @@ AGENT_TIMEOUT = _float("AGENT_TIMEOUT", 45.0)   # mark offline after silence
 PUBLIC_URL = _env("PUBLIC_URL").rstrip("/")
 
 # Railway injects this; falls back for local runs.
-PORT = _int("PORT", 8000)
+PORT = _int("PORT", 8080)
 
 
 def public_url():
