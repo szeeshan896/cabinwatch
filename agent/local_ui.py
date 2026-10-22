@@ -659,7 +659,7 @@ async function save() {
     msg(j.detail || (j.ok ? 'Saved.' : 'Did not save.'), j.ok ? 'ok' : 'bad');
     if (j.ok) {
       document.getElementById('tok').value = '';
-      setTimeout(load, 2500);
+      [3000, 7000, 12000].forEach(ms => setTimeout(load, ms));
     }
   } catch (e) { msg('Did not save: ' + e, 'bad'); }
   btn.disabled = false;

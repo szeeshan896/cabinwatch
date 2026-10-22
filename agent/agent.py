@@ -657,17 +657,71 @@ class CameraSession:
     # =====================================================================
     # microphone and speaker
     # =====================================================================
+    def _open_microphone(self):
+        """Open the mic, at whatever rate it is willing to give us.
+
+        Plenty of devices - USB headsets especially - refuse 16 kHz outright
+        with "Invalid sample rate", so asking for it and giving up means no
+        sound alerts at all on that machine. Try ours first, then the
+        device's own preferred rate, then the usual suspects, and resample
+        whatever we get.
+        """
+        rates = [AUDIO_RATE]
+        try:
+            info = sd.query_devices(self.audio_device, "input")
+            default_sr = int(round(float(info.get("default_samplerate") or 0)))
+            if default_sr and default_sr not in rates:
+                rates.append(default_sr)
+        except Exception:
+            pass
+        for sr in (48000, 44100, 32000, 22050, 11025, 8000):
+            if sr not in rates:
+                rates.append(sr)
+
+        last = None
+        for sr in rates:
+            try:
+                block = max(256, int(AUDIO_BLOCK * sr / AUDIO_RATE))
+                stream = sd.InputStream(samplerate=sr, channels=1,
+                                        dtype="float32", blocksize=block,
+                                        device=self.audio_device)
+                stream.start()
+                if sr != AUDIO_RATE:
+                    print(f"[{self.cam_id}] microphone open at {sr} Hz "
+                          f"(it would not give us {AUDIO_RATE} Hz, so the "
+                          f"sound is resampled)")
+                else:
+                    print(f"[{self.cam_id}] microphone open")
+                return stream, sr, block
+            except Exception as e:
+                last = e
+        raise last if last else RuntimeError("no microphone")
+
+    @staticmethod
+    def _to_16k(mono, rate):
+        """Straight-line resample to the one rate everything else expects."""
+        if rate == AUDIO_RATE or len(mono) == 0:
+            return mono
+        want = max(1, int(round(len(mono) * AUDIO_RATE / rate)))
+        return np.interp(
+            np.linspace(0.0, len(mono) - 1, want, dtype=np.float64),
+            np.arange(len(mono), dtype=np.float64),
+            mono.astype(np.float64),
+        ).astype(np.float32)
+
     def audio_loop(self):
         if not self.audio_enabled:
             return
         try:
-            with sd.InputStream(samplerate=AUDIO_RATE, channels=1,
-                                dtype="float32", blocksize=AUDIO_BLOCK,
-                                device=self.audio_device) as stream:
-                print(f"[{self.cam_id}] microphone open")
+            stream, rate, block = self._open_microphone()
+            with stream:
                 while not self._stop.is_set():
-                    block, overflowed = stream.read(AUDIO_BLOCK)
-                    mono = block[:, 0]
+                    raw, overflowed = stream.read(block)
+                    mono = self._to_16k(raw[:, 0], rate)
+
+                    n = len(mono)
+                    if n == 0:
+                        continue
 
                     kind = self.sound.feed(mono)
                     if self.sound.loud:
@@ -695,7 +749,11 @@ class CameraSession:
                         self.send_binary(BIN_AUDIO, pcm_bytes)
         except Exception as e:
             print(f"[{self.cam_id}] microphone unavailable: {e}")
+            print(f"[{self.cam_id}] Sound alerts and Listen are off for this "
+                  f"camera; video and movement still work.")
             self.audio_enabled = False
+            # Stop opening a sound file per clip that nothing will ever write.
+            self.rec.want_audio = False
 
     def _on_talk(self, pcm_bytes):
         if not self.speaker_enabled:
@@ -823,6 +881,23 @@ class CameraSession:
             self.threads.append(t)
         print(f"[{self.cam_id}] started ({self.name})")
 
+    def join(self, timeout=6.0):
+        """Wait for the threads to finish, so the camera is really free.
+
+        Windows will not hand the same webcam to a second opener while the
+        first still holds it, so restarting without waiting here leaves the
+        new session unable to open anything.
+        """
+        deadline = time.time() + timeout
+        for t in self.threads:
+            left = deadline - time.time()
+            if left <= 0:
+                break
+            try:
+                t.join(timeout=left)
+            except RuntimeError:
+                pass
+
     def stop(self):
         self._stop.set()
         self.ptz_autostop.cancel()
@@ -897,17 +972,32 @@ class Supervisor:
                     print(f"[{cam_id}] failed to start: {e}")
         return bool(self.sessions)
 
-    def stop(self):
+    def stop(self, wait=True):
         with self._lock:
-            for s in self.sessions.values():
+            sessions = list(self.sessions.values())
+            self.sessions.clear()
+        for s in sessions:
+            try:
+                s.stop()
+            except Exception:
+                pass
+        if wait:
+            # Signalling is not enough: the capture thread may be sitting
+            # inside a read, still holding the device.
+            for s in sessions:
                 try:
-                    s.stop()
+                    s.join(timeout=6.0)
                 except Exception:
                     pass
-            self.sessions.clear()
 
     def apply(self, data):
-        """Save new settings and restart every camera from them."""
+        """Save new settings, then restart every camera from them.
+
+        The file is written before returning, so the caller knows it is
+        saved, but the restart runs on its own thread: releasing a camera and
+        opening another takes seconds, and the page should not sit there
+        looking frozen while it happens.
+        """
         if not self.editable:
             raise RuntimeError(
                 "These settings come from agent/config.py, so they have to be "
@@ -915,14 +1005,22 @@ class Supervisor:
 
         setup_wizard.save_json_config(data)
         new_cfg = setup_wizard.JsonConfig(data)
+        threading.Thread(target=self._restart, args=(new_cfg,),
+                         daemon=True).start()
 
+    def _restart(self, new_cfg):
         print("[panel] settings changed - restarting the cameras")
         self.stop()
-        time.sleep(0.8)              # let the devices be released
         self.cfg = new_cfg
         self.wanted = dict(new_cfg.CAMERAS)
-        os.makedirs(new_cfg.CLIPS_DIR, exist_ok=True)
-        self.start()
+        try:
+            os.makedirs(new_cfg.CLIPS_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"[panel] could not use {new_cfg.CLIPS_DIR}: {e}")
+        if self.start():
+            print("[panel] cameras restarted")
+        else:
+            print("[panel] no camera could be started with the new settings")
 
 
 def list_microphones():
