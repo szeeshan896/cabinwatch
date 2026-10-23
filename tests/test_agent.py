@@ -1,10 +1,17 @@
 """Runs the REAL agent against the real server, using a synthetic video."""
-import os, sys, json, time, shutil, threading, urllib.request, http.cookiejar
+import os
+import tempfile as _tempfile, sys, json, time, shutil, threading, urllib.request, http.cookiejar
 import os as _os, sys as _sys
 _ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 
 os.environ.update(AGENT_TOKEN="tok-abc", VIEW_PASSWORD="pw",
                   SECRET_KEY="fixed", PORT="8098")
+# Keep this run's history and saved clips out of every other run's.
+os.environ.setdefault("EVENT_LOG", _tempfile.mkdtemp(
+    prefix="cabinwatch-state-") + "/events.json")
+os.environ["EVIDENCE_DIR"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/clips"
+os.environ["SCHEDULE_FILE"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/s.json"
+
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _os.path.join(_ROOT, "agent"))
 

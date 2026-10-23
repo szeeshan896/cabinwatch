@@ -452,6 +452,24 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### Hours — so you stop being alerted about yourself
+
+A camera you have to arm and disarm by hand ends up disarmed. You turn it off
+because it keeps alerting about you, and nobody remembers to turn it back on
+in the evening.
+
+**Hours** on a camera's card asks the question you can actually answer: when
+are you normally there? Pick the times and the days, and it leaves you alone
+during them and watches the rest of the time by itself. It keeps pushing that
+at the camera rather than setting it once, so a camera that was off all night
+comes back to the right state instead of whatever it had when it died.
+
+**Set `TIMEZONE` for this to make sense.** The server runs wherever it is
+hosted, and on Railway that is UTC — so without it, hours set for ten at night
+start at half past three in the morning in India. Put your IANA zone in
+Railway's variables, for example `TIMEZONE=Asia/Kolkata`. Quiet hours use it
+too, and had exactly the same problem until now.
+
 ### The siren
 
 **Siren** on a camera's card makes that device scream — a two-tone wail

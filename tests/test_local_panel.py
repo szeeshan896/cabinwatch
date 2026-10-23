@@ -1,9 +1,16 @@
 """Runs the agent with a settings page and drives it like a person would."""
-import os, sys, json, time, shutil, threading, urllib.request
+import os
+import tempfile as _tempfile, sys, json, time, shutil, threading, urllib.request
 import os as _os, sys as _sys
 _ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT); sys.path.insert(0, _os.path.join(_ROOT, "agent"))
 os.environ.update(AGENT_TOKEN="tok", VIEW_PASSWORD="pw", SECRET_KEY="f", PORT="8095")
+# Keep this run's history and saved clips out of every other run's.
+os.environ.setdefault("EVENT_LOG", _tempfile.mkdtemp(
+    prefix="cabinwatch-state-") + "/events.json")
+os.environ["EVIDENCE_DIR"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/clips"
+os.environ["SCHEDULE_FILE"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/s.json"
+
 
 import cv2, numpy as np, uvicorn
 import setup_wizard, local_ui, agent as A

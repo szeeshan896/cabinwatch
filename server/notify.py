@@ -64,7 +64,7 @@ class Notifier:
         a, b = settings.QUIET_FROM, settings.QUIET_TO
         if a < 0 or b < 0:
             return False
-        hour = datetime.datetime.now().hour
+        hour = settings.now().hour
         if a <= b:
             return a <= hour < b
         # window wraps midnight, e.g. 23 -> 7

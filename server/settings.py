@@ -15,6 +15,7 @@ Recommended:
 
 import os
 import secrets
+import datetime
 
 
 def _env(name, default=""):
@@ -60,7 +61,23 @@ NTFY_TOKEN = _env("NTFY_TOKEN")          # only for self-hosted / reserved topic
 # Don't spam: minimum gap between pushes for the same camera + event kind.
 NOTIFY_MIN_GAP = _float("NOTIFY_MIN_GAP", 90.0)
 
-# Quiet hours (24h clock, server local time). Inside these hours only
+# Which clock "22:00" means. The server is in a datacentre - on Railway it
+# runs on UTC - so without this, quiet hours set for ten at night start at
+# half past three in the morning in India. An IANA name: Asia/Kolkata,
+# Europe/London, America/New_York.
+TIMEZONE = _env("TIMEZONE", "UTC")
+
+
+def now():
+    """The time where the person using this lives, not where it is hosted."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo(TIMEZONE))
+    except Exception:
+        return datetime.datetime.now()
+
+
+# Quiet hours (24h clock, in TIMEZONE). Inside these hours only
 # high-priority events (impact / person) push. "" disables quiet hours.
 QUIET_FROM = _int("QUIET_FROM", -1)
 QUIET_TO = _int("QUIET_TO", -1)
@@ -101,6 +118,12 @@ EVENT_HISTORY = _int("EVENT_HISTORY", 300)      # events kept in memory
 # outlives being able to see a thumbnail of it. On a host with an ephemeral
 # disk, Railway among them, a redeploy still clears this.
 EVENT_LOG = _env("EVENT_LOG", "evidence/events.json")
+# Per-camera arming windows, kept next to the history.
+SCHEDULE_FILE = _env("SCHEDULE_FILE", "evidence/schedules.json")
+# How often a scheduled camera is checked against its window. It is pushed
+# repeatedly rather than once at the boundary, so a camera that was off
+# overnight comes back to the right state by itself.
+SCHEDULE_CHECK_SECONDS = _float("SCHEDULE_CHECK_SECONDS", 30.0)
 AGENT_TIMEOUT = _float("AGENT_TIMEOUT", 45.0)   # mark offline after silence
 PUBLIC_URL = _env("PUBLIC_URL").rstrip("/")
 

@@ -470,6 +470,7 @@ class Hub:
                   extra=None):
         self._event_seq += 1
         eid = self._event_seq
+        now = time.time()
         ev = {
             "id": eid,
             "camera": cam_id,
@@ -480,8 +481,15 @@ class Hub:
             # whatever timezone its host feels like - UTC on Railway - and
             # showing that to someone in another one is just a wrong clock.
             # Whoever is looking formats it against their own.
-            "at": time.time(),
-            "thumb": f"/event/{eid}/thumb.jpg" if thumb else None,
+            "at": now,
+            # The moment is in the address on purpose. Event numbers start
+            # again from one whenever the server restarts - which on Railway
+            # is every deploy - so yesterday's picture and today's would
+            # otherwise share a url, and a browser that cached the first
+            # never asks for the second. Last night's photographs turning up
+            # against this morning's alerts is exactly what that looks like.
+            "thumb": (f"/event/{eid}/thumb.jpg?t={int(now)}"
+                      if thumb else None),
         }
         if extra:
             ev.update({k: v for k, v in extra.items() if v is not None})

@@ -14,6 +14,7 @@ cleared by a redeploy anyway. It covers a restart, not a rebuild.
 import os
 import sys
 import json
+import time
 import shutil
 import tempfile
 
@@ -65,6 +66,37 @@ def test_new_events_do_not_reuse_old_numbers():
                  fresh not in before, f"id {fresh}, already used {sorted(before)}")
 
 
+def test_yesterdays_picture_cannot_turn_up_against_todays_alert():
+    """The one that got reported from a phone, with the photograph to prove it.
+
+    Event numbers start again from one whenever the server restarts, and on
+    Railway a restart is every deploy. The thumbnail address was built from
+    that number alone and served with a day of caching, so after a deploy a
+    new event got an address a browser already had a picture for - and
+    showed last night's photograph against this morning's alert without ever
+    asking the server.
+    """
+    if os.path.exists(LOG):
+        os.remove(LOG)
+    first = Hub()
+    first.add_event("cabin", "Cabin", "person", "last night", thumb=b"OLD")
+    old_url = first.events[-1]["thumb"]
+
+    # A deploy. The file goes too, which is what Railway does to it.
+    os.remove(LOG)
+    time.sleep(1.1)                       # a later second, standing in for
+    later = Hub()                         # a later day
+    later.add_event("cabin", "Cabin", "person", "this morning", thumb=b"NEW")
+    new_url = later.events[-1]["thumb"]
+
+    ok = check("both events really did get the same number",
+               old_url.split("?")[0] == new_url.split("?")[0],
+               f"{old_url} and {new_url}")
+    ok &= check("but their pictures do not share an address",
+                old_url != new_url, f"{old_url} vs {new_url}")
+    return ok
+
+
 def test_a_damaged_history_is_not_fatal():
     """A half-written file after a power cut must not stop the server."""
     with open(LOG, "w") as f:
@@ -100,6 +132,7 @@ def main():
     try:
         for test in (test_the_history_outlives_a_restart,
                      test_new_events_do_not_reuse_old_numbers,
+                     test_yesterdays_picture_cannot_turn_up_against_todays_alert,
                      test_a_damaged_history_is_not_fatal,
                      test_it_does_not_grow_without_limit):
             test()

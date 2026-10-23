@@ -1,9 +1,16 @@
 """Does the device's own condition reach the dashboard and the alerts?"""
-import os, sys, json, time, threading, urllib.parse, urllib.request, http.cookiejar
+import os
+import tempfile as _tempfile, sys, json, time, threading, urllib.parse, urllib.request, http.cookiejar
 import os as _os, sys as _sys
 _ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 os.environ.update(AGENT_TOKEN="demo", VIEW_PASSWORD="demo", SECRET_KEY="f",
                   PORT="8092", NTFY_TOPIC="")
+# Keep this run's history and saved clips out of every other run's.
+os.environ.setdefault("EVENT_LOG", _tempfile.mkdtemp(
+    prefix="cabinwatch-state-") + "/events.json")
+os.environ["EVIDENCE_DIR"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/clips"
+os.environ["SCHEDULE_FILE"] = os.path.dirname(os.environ["EVENT_LOG"]) + "/s.json"
+
 sys.path.insert(0, _ROOT)
 import cv2, numpy as np, uvicorn, websocket
 from playwright.sync_api import sync_playwright

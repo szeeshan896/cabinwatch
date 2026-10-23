@@ -25,8 +25,11 @@ import urllib.request
 import http.cookiejar
 
 WORK = tempfile.mkdtemp(prefix="cabinwatch-evidence-")
+# Its own corner of the disk, so no other run's history or clips leak in.
 os.environ.update(AGENT_TOKEN="demo", VIEW_PASSWORD="demo", SECRET_KEY="f",
                   PORT="8096", NTFY_TOPIC="",
+                  EVENT_LOG=os.path.join(WORK, "events.json"),
+                  SCHEDULE_FILE=os.path.join(WORK, "schedules.json"),
                   EVIDENCE_DIR=os.path.join(WORK, "evidence"),
                   EVIDENCE_MAX_MB="2")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

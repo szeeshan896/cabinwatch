@@ -18,13 +18,21 @@ import os
 import sys
 import json
 import time
+import shutil
+import tempfile
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 
+# Its own corner of the disk: the server now keeps its history and its
+# saved clips, and a test that read another run's would be testing that.
+WORK = tempfile.mkdtemp(prefix="cabinwatch-test-")
 os.environ.update(AGENT_TOKEN="demo", VIEW_PASSWORD="demo", SECRET_KEY="f",
-                  PORT="8097", NTFY_TOPIC="")
+                  PORT="8097", NTFY_TOPIC="",
+                  EVENT_LOG=os.path.join(WORK, "events.json"),
+                  EVIDENCE_DIR=os.path.join(WORK, "evidence"),
+                  SCHEDULE_FILE=os.path.join(WORK, "schedules.json"))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import uvicorn                                    # noqa: E402
@@ -245,4 +253,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    finally:
+        shutil.rmtree(WORK, ignore_errors=True)

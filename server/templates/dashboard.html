@@ -474,6 +474,94 @@ function ptzStop(camId) {
   cmd(camId, "ptz", { action: "stop" });
 }
 
+/* ---------- when a camera should be watching ----------
+
+   Said as "when are you normally there", not "when should it be armed".
+   That is the question somebody can actually answer about their own cabin,
+   and the camera being armed the rest of the time follows from it. */
+async function openSchedule(camId, camName) {
+  const modal = document.getElementById("modal");
+  document.getElementById("mTitle").textContent = `When ${camName} watches`;
+  modal.classList.add("show");
+
+  let now = {};
+  try {
+    const r = await fetch(`/schedule/${encodeURIComponent(camId)}`);
+    now = await r.json();
+  } catch (e) {}
+
+  const row = now.schedule || {};
+  const days = row.days || [0, 1, 2, 3, 4, 5, 6];
+  const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  document.getElementById("mBody").innerHTML = `
+    <div style="font-size:13px;color:#8b949e;margin-bottom:12px">
+      Tell it when you are normally there and it will stop alerting about
+      you - and arm itself again the rest of the time, without anybody
+      having to remember.
+      <br><br>Times are ${esc(now.timezone || "UTC")}; it is
+      ${esc(now.clock || "")} there now.
+    </div>
+    <div class="inline" style="margin-bottom:10px">
+      <label>I am there from</label>
+      <input type="time" id="schFrom" value="${esc(row.off_from || "10:00")}">
+      <label>until</label>
+      <input type="time" id="schUntil" value="${esc(row.off_until || "19:00")}">
+    </div>
+    <div style="font-size:13px;color:#8b949e;margin-bottom:6px">On these days</div>
+    <div class="btns" id="schDays" style="flex-wrap:wrap;margin-bottom:14px">
+      ${names.map((n, i) => `<button data-day="${i}"
+        class="${days.includes(i) ? "active" : ""}">${n}</button>`).join("")}
+    </div>
+    <div class="btns">
+      <button onclick="saveSchedule('${esc(camId)}')">Save</button>
+      <button class="ghost" onclick="clearSchedule('${esc(camId)}')">
+        No schedule - I will arm it myself</button>
+    </div>
+    <div id="schMsg" style="font-size:13px;margin-top:10px;color:#8b949e"></div>`;
+
+  document.querySelectorAll("#schDays button").forEach(b => {
+    b.onclick = () => b.classList.toggle("active");
+  });
+}
+
+async function saveSchedule(camId) {
+  const days = [...document.querySelectorAll("#schDays button.active")]
+    .map(b => Number(b.dataset.day));
+  const body = {
+    off_from: document.getElementById("schFrom").value,
+    off_until: document.getElementById("schUntil").value,
+    days: days.length === 7 ? null : days,
+  };
+  const msg = document.getElementById("schMsg");
+  if (!days.length) {
+    msg.textContent = "Pick at least one day, or choose no schedule.";
+    return;
+  }
+  try {
+    const r = await fetch(`/schedule/${encodeURIComponent(camId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = j.detail || "That did not save."; return; }
+    msg.textContent = j.schedule && j.schedule.armed_now
+      ? "Saved. It is watching now."
+      : "Saved. It is leaving you alone just now.";
+  } catch (e) {
+    msg.textContent = "That did not save: " + e.message;
+  }
+}
+
+async function clearSchedule(camId) {
+  await fetch(`/schedule/${encodeURIComponent(camId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  document.getElementById("schMsg").textContent =
+    "Schedule removed. Alerts are yours to turn on and off now.";
+}
+
 /* ---------- recordings stored on the device ---------- */
 async function openClips(camId, camName) {
   const modal = document.getElementById("modal");
@@ -649,6 +737,7 @@ function buildCard(c) {
         <button data-act="baby">Baby</button>
         <button data-act="arm">Alerts</button>
         <button data-act="clips">Clips</button>
+        <button data-act="when" title="Set the hours you are normally there, so it arms itself around you">Hours</button>
         <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
         <button data-act="rotate" title="Turn the picture a quarter turn - for a camera that is not mounted the right way up">Rotate</button>
         <button data-act="alarm" title="Sound a siren and flash the torch on the device itself">Siren</button>
@@ -699,6 +788,10 @@ function buildCard(c) {
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id);
+  };
+  act("when").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    openSchedule(id, c2.name || id);
   };
   act("alarm").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};

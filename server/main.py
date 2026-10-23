@@ -32,6 +32,9 @@ from . import protocol
 from .hub import hub, Camera, Viewer, reaper, STATE_FIELDS
 from .notify import notifier
 from .evidence import Store
+from .schedule import Schedules
+
+schedules = Schedules()
 
 evidence = Store(on_removed=lambda key: hub.forget_evidence(key))
 
@@ -72,13 +75,16 @@ async def lifespan(app: FastAPI):
     print(f"[server] public URL     : {settings.public_url()}")
     print(f"[server] notifications  : "
           f"{'on (ntfy)' if settings.NTFY_TOPIC else 'OFF - set NTFY_TOPIC'}")
-    task = asyncio.create_task(reaper())
+    print(f"[server] clock           : {settings.now():%H:%M} "
+          f"({settings.TIMEZONE})")
+    jobs = [asyncio.create_task(reaper()), asyncio.create_task(keeper())]
     try:
         yield
     finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        for job in jobs:
+            job.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await job
         await notifier.close()
 
 
@@ -235,8 +241,10 @@ async def event_thumb(eid: int):
     jpeg = hub.thumb(eid)
     if jpeg is None:
         raise HTTPException(status_code=404)
+    # Private, because this is a photograph of somebody's home and has no
+    # business sitting in a shared cache on the way.
     return Response(content=jpeg, media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +405,60 @@ async def _keep_a_copy(cam: Camera, filename: str):
           f"({written / 1048576:.1f} MB)")
     hub.note_evidence(cam.cam_id, filename, key)
     await hub.broadcast_state()
+
+
+async def keeper():
+    """Hold every scheduled camera at the state its window asks for.
+
+    Pushed repeatedly rather than once at the boundary, so a camera that
+    was off overnight comes back to the right state by itself instead of
+    to whatever it was in when it died.
+    """
+    while True:
+        await asyncio.sleep(settings.SCHEDULE_CHECK_SECONDS)
+        for cam in list(hub.cameras.values()):
+            try:
+                wanted = schedules.should_be_armed(cam.cam_id)
+                if wanted is None or cam.state.get("armed") == wanted:
+                    continue
+                await cam.send({"t": "arm", "on": wanted})
+            except Exception as e:
+                print(f"[schedule] {cam.cam_id}: {e}")
+
+
+@app.get("/schedule/{cam_id}")
+async def get_schedule(cam_id: str, request: Request):
+    require_login(request)
+    return {"camera": cam_id, "schedule": schedules.describe(cam_id),
+            "timezone": settings.TIMEZONE,
+            "clock": settings.now().strftime("%H:%M")}
+
+
+@app.post("/schedule/{cam_id}")
+async def set_schedule(cam_id: str, request: Request):
+    """Say when you are normally there, so it stops alerting about you."""
+    require_login(request)
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+
+    if not body or not body.get("off_from"):
+        schedules.clear(cam_id)
+        return {"ok": True, "schedule": None}
+
+    try:
+        row = schedules.set(cam_id, body.get("off_from"),
+                            body.get("off_until"), body.get("days"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Apply it now rather than up to half a minute later.
+    cam = hub.get(cam_id)
+    wanted = schedules.should_be_armed(cam_id)
+    if cam is not None and wanted is not None:
+        await cam.send({"t": "arm", "on": wanted})
+    await hub.broadcast_state()
+    return {"ok": True, "schedule": dict(row, armed_now=wanted)}
 
 
 @app.get("/saved")
