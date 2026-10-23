@@ -15,6 +15,8 @@ What flows through the hub
   control  viewer -> camera         record, baby mode, PTZ, lens switch
 """
 
+import os
+import json
 import time
 import asyncio
 import datetime
@@ -308,6 +310,9 @@ class Hub:
         self.events = deque(maxlen=settings.EVENT_HISTORY)
         self.thumbs = {}
         self._event_seq = 0
+        self._events_path = settings.EVENT_LOG
+        self._events_dirty = False
+        self._load_events()
         self._dash_clients = set()
         self._conflicts = {}             # cam_id -> when we last complained
 
@@ -481,6 +486,8 @@ class Hub:
         if extra:
             ev.update({k: v for k, v in extra.items() if v is not None})
         self.events.append(ev)
+        self._events_dirty = True
+        self.save_events()
 
         if thumb:
             self.thumbs[eid] = thumb
@@ -521,6 +528,49 @@ class Hub:
         for ev in self.events:
             if ev.get("camera") == cam_id and ev.get("clip") == filename:
                 ev["saved"] = f"/saved/{key}"
+
+    # -- the history ---------------------------------------------------------
+    # Events lived only in memory, so every redeploy wiped the lot - and on
+    # Railway a redeploy is how you change anything at all. The pictures are
+    # left out on purpose: they are the bulky part, and knowing that
+    # something happened outlives being able to see a thumbnail of it.
+    def _load_events(self):
+        if not self._events_path:
+            return
+        try:
+            with open(self._events_path) as f:
+                rows = json.load(f)
+        except FileNotFoundError:
+            return
+        except Exception as e:
+            print(f"[events] could not read the history: {e}")
+            return
+
+        for ev in rows[-settings.EVENT_HISTORY:]:
+            ev.pop("thumb", None)           # the picture did not survive
+            self.events.append(ev)
+            try:
+                self._event_seq = max(self._event_seq, int(ev.get("id", 0)))
+            except (TypeError, ValueError):
+                pass
+        if self.events:
+            print(f"[events] carried {len(self.events)} events over")
+
+    def save_events(self):
+        """Write the history out. Small enough to do on every event."""
+        if not self._events_path or not self._events_dirty:
+            return
+        self._events_dirty = False
+        try:
+            folder = os.path.dirname(os.path.abspath(self._events_path))
+            os.makedirs(folder, exist_ok=True)
+            tmp = self._events_path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump([{k: v for k, v in ev.items() if k != "thumb"}
+                           for ev in self.events], f)
+            os.replace(tmp, self._events_path)
+        except Exception as e:
+            print(f"[events] could not write the history: {e}")
 
     def thumb(self, eid):
         return self.thumbs.get(eid)

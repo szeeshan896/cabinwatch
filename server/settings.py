@@ -96,6 +96,11 @@ EVIDENCE_KINDS = tuple(
 
 # -- housekeeping ------------------------------------------------------------
 EVENT_HISTORY = _int("EVENT_HISTORY", 300)      # events kept in memory
+# Where the history is written so it survives a restart. The pictures are
+# not kept - they are the bulky part, and knowing that something happened
+# outlives being able to see a thumbnail of it. On a host with an ephemeral
+# disk, Railway among them, a redeploy still clears this.
+EVENT_LOG = _env("EVENT_LOG", "evidence/events.json")
 AGENT_TIMEOUT = _float("AGENT_TIMEOUT", 45.0)   # mark offline after silence
 PUBLIC_URL = _env("PUBLIC_URL").rstrip("/")
 

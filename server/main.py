@@ -85,6 +85,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CabinWatch", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """A few headers that cost nothing and close off easy mistakes.
+
+    This server shows live pictures of your home. It should not be
+    embeddable in somebody else's page, its address should not travel in a
+    referrer to wherever a link goes, and once it has been reached over
+    https a browser should refuse to go back to plain http.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if _is_https(request):
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000")
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Viewer auth: one password, held as a signed cookie. Enough for a private
 # family/office tool, and it keeps the feeds off the open internet.
@@ -111,6 +130,19 @@ def _verify(token: str) -> bool:
         return False
 
 
+def _is_https(request: Request) -> bool:
+    """Did this request arrive over https?
+
+    Railway and anything else behind a proxy terminate TLS in front of us,
+    so the scheme we see is http; the header they set is the only honest
+    answer. It is only trusted for deciding to make a cookie *safer*.
+    """
+    if request.url.scheme == "https":
+        return True
+    return request.headers.get("x-forwarded-proto", "").split(",")[0].strip() \
+        == "https"
+
+
 def logged_in(request: Request) -> bool:
     if not settings.VIEW_PASSWORD:
         return False
@@ -131,16 +163,21 @@ async def login_page(request: Request, bad: int = 0):
 
 
 @app.post("/login")
-async def do_login(password: str = Form("")):
+async def do_login(request: Request, password: str = Form("")):
     if not settings.VIEW_PASSWORD or not hmac.compare_digest(
             password, settings.VIEW_PASSWORD):
         await asyncio.sleep(1.0)        # slow down guessing
         return RedirectResponse("/login?bad=1", status_code=303)
     expiry = time.time() + settings.SESSION_DAYS * 86400
     resp = RedirectResponse("/", status_code=303)
+    # Marked secure wherever the connection is https, so the cookie that
+    # opens your cameras is never put on the wire in the clear. Not over
+    # plain http, because then the browser would drop it and nobody could
+    # log in to a server running locally.
     resp.set_cookie(COOKIE, _sign(f"{expiry:.0f}"),
                     max_age=settings.SESSION_DAYS * 86400,
-                    httponly=True, samesite="lax")
+                    httponly=True, samesite="lax",
+                    secure=_is_https(request))
     return resp
 
 
