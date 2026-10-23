@@ -12,7 +12,12 @@ plugins {
 // With CABINWATCH_KEYSTORE set, builds are signed with one key that stays
 // the same, and an update installs over the top like an update should. The
 // keystore lives in the repository's secrets, never in the repository.
-val keystorePath: String? = System.getenv("CABINWATCH_KEYSTORE")
+// Empty counts as absent. The workflow sets this variable either way, to
+// an empty string when there is no key, and file("") throws rather than
+// being falsy - which failed the build instead of falling back to the
+// unsigned path it was meant to.
+val keystorePath: String? =
+    System.getenv("CABINWATCH_KEYSTORE")?.takeIf { it.isNotBlank() }
 val keystorePass: String = System.getenv("CABINWATCH_KEYSTORE_PASSWORD") ?: ""
 val keyAliasName: String = System.getenv("CABINWATCH_KEY_ALIAS") ?: "cabinwatch"
 
