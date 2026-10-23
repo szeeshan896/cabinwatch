@@ -236,7 +236,8 @@ jobs:
           **Laptop** — download `CabinWatch-Agent.exe` on the laptop and run
           it. It asks for your server address and token the first time, finds
           the cameras on the machine, and saves the answers next to itself.
-          No Python needed.
+          No Python needed. It then lives in the system tray: right-click the
+          icon for the settings, the recordings folder, or to stop it.
 
           Neither file contains your server address or your token. You type
           those in once per device and they stay on that device.
@@ -257,6 +258,13 @@ jobs:
           - **Battery, location and "camera was moved"** on the dashboard
           - **Comes back by itself** - the phone app checks on itself every
             quarter of an hour; the laptop agent can start with Windows
+          - **Standby** - a camera on battery stops recording and watching,
+            holds only its connection, and wakes when you open it to look.
+            Days on a charge instead of one night. The server also does it
+            on its own below 30% rather than letting the phone die
+          - **The laptop agent runs in the tray** - no console window on the
+            desktop, and a `cabinwatch.log` beside the exe to look at when
+            something went wrong overnight
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" out/* --clobber
