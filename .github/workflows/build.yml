@@ -40,12 +40,14 @@ jobs:
           python-version: '3.12'
           cache: pip
 
-      # Installing the browser used to be able to hang the whole run.
-      # "--with-deps" shells out to apt, and when apt sits waiting the step
-      # has nothing to time it out - one run held a runner for an hour on a
-      # step that normally takes thirty seconds. So: a deadline, apt told
-      # never to ask questions, and a fallback to the plain install, because
-      # the runner image already carries nearly every library Chromium wants.
+      # This step is the least predictable one in the whole workflow: it took
+      # 30 seconds on one run and 5 minutes on the next, because
+      # "--with-deps" shells out to apt and apt is at the mercy of whichever
+      # mirror answers. Nothing here had a deadline, so a mirror that never
+      # answered would have held the runner until the job's own limit. Hence
+      # a deadline, apt told not to ask questions, and a fallback to the
+      # plain browser install - the runner image already carries nearly
+      # every library Chromium wants.
       - name: Install what the checks need
         timeout-minutes: 15
         env:
@@ -59,7 +61,7 @@ jobs:
                       "pystray>=0.19.5" "pillow>=10.0.0"
           pip install -r requirements.txt
           pip install playwright
-          timeout 8m playwright install --with-deps chromium \
+          timeout 10m playwright install --with-deps chromium \
             || playwright install chromium
 
       - name: Run them

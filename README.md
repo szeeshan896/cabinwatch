@@ -209,11 +209,16 @@ the camera running while the app is in the background and the screen is off.
 **Get the APK.** You do not need Android Studio. Every push builds one:
 
 1. Go to the **Actions** tab of your GitHub repository.
-2. Open the newest **Build Android APK** run.
+2. Open the newest **Build apps** run.
 3. Download the **cabinwatch-camera-apk** artifact and unzip it.
-4. Put `app-debug.apk` on the phone and open it. Android will ask you to
-   allow installing from outside the Play Store — that is expected for an app
-   you built yourself.
+4. Put `CabinWatch-camera.apk` on the phone and open it. Android will ask you
+   to allow installing from outside the Play Store — that is expected for an
+   app you built yourself.
+
+If the phone says only **App not installed** and CabinWatch is already on it,
+the two builds were signed with different keys. Set up the signing key above
+and that stops happening; until then the way through is to uninstall CabinWatch
+first, which loses that phone's settings.
 
 If you would rather build it locally, you need Android Studio or the command
 line tools, then:
