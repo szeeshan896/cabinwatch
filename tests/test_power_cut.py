@@ -28,7 +28,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 AGENT = os.path.join(os.path.dirname(HERE), "agent")
 sys.path.insert(0, AGENT)
 
+sys.path.insert(0, HERE)
+
 import muxer                                   # noqa: E402
+import mediainfo                               # noqa: E402
 
 PASSED = []
 FAILED = []
@@ -41,32 +44,14 @@ def check(name, ok, detail=""):
     return bool(ok)
 
 
-def ffprobe(path, entries="stream=codec_type"):
-    """Ask ffmpeg what is actually in a file. Empty means unreadable."""
-    exe = shutil.which("ffprobe")
-    if exe is None:
-        return None                      # cannot tell here; not a failure
-    out = subprocess.run(
-        [exe, "-v", "error", "-show_entries", entries, "-of", "csv=p=0", path],
-        capture_output=True, text=True)
-    if out.returncode != 0:
-        return []
-    return [line for line in out.stdout.split() if line]
+def ffprobe(path, entries=None):
+    """Which kinds of stream the file holds. Empty means unreadable."""
+    return mediainfo.streams(path)
 
 
 def readable_frames(path):
-    got = ffprobe(path, "stream=nb_read_frames")
-    if got is None:
-        return None
-    exe = shutil.which("ffprobe")
-    out = subprocess.run(
-        [exe, "-v", "error", "-count_frames", "-select_streams", "v:0",
-         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", path],
-        capture_output=True, text=True)
-    try:
-        return int(out.stdout.strip())
-    except ValueError:
-        return 0
+    """How many frames can still be read back. None if nothing can tell us."""
+    return mediainfo.frame_count(path)
 
 
 WRITER = '''

@@ -17,6 +17,7 @@ import os
 import copy
 import json
 import socket
+import time
 import threading
 import webbrowser
 import urllib.parse
@@ -123,11 +124,18 @@ class ControlPanel:
         return True
 
     def stop(self):
+        # Stop handing out camera probes before the server goes: a probe
+        # still inside OpenCV while the process is tearing down takes the
+        # whole thing with it, and the exit code says "crash" long after
+        # the work was finished.
+        _probing_allowed.clear()
         if self.httpd is not None:
             try:
                 self.httpd.shutdown()
             except Exception:
                 pass
+        with _probe_lock:
+            pass                      # let any probe already running finish
 
     # -- what the page reads -------------------------------------------------
     def state(self):
@@ -315,17 +323,34 @@ def _ffmpeg_ok():
         return False
 
 
-def _probe_cameras(limit=6):
-    found = []
-    for i in range(limit):
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            ok, frame = cap.read()
-            if ok and frame is not None:
-                h, w = frame.shape[:2]
-                found.append({"id": i, "label": f"Camera {i}  ({w}x{h})"})
-            cap.release()
-    return found
+# Opening cameras one by one is slow and noisy, and two pages asking at
+# once would have them fighting over the same devices. One at a time, and
+# the answer is kept for a moment because it hardly ever changes.
+_probe_lock = threading.Lock()
+_probe_cache = {"at": 0.0, "found": []}
+_probing_allowed = threading.Event()
+_probing_allowed.set()
+
+
+def _probe_cameras(limit=6, max_age=20.0):
+    if not _probing_allowed.is_set():
+        return list(_probe_cache["found"])
+    with _probe_lock:
+        if time.time() - _probe_cache["at"] < max_age:
+            return list(_probe_cache["found"])
+        found = []
+        for i in range(limit):
+            if not _probing_allowed.is_set():
+                return list(_probe_cache["found"])
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    h, w = frame.shape[:2]
+                    found.append({"id": i, "label": f"Camera {i}  ({w}x{h})"})
+                cap.release()
+        _probe_cache.update(at=time.time(), found=found)
+        return list(found)
 
 
 def _list_mics():

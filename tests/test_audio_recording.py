@@ -16,14 +16,14 @@ def check(n, ok, extra=""):
     (PASS if ok else FAIL).append(n)
     print(f"  {'PASS' if ok else 'FAIL'}  {n}" + (f"   {extra}" if extra else ""))
 
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import mediainfo
+
 def probe(path):
-    r = subprocess.run([muxer.ffmpeg().replace("ffmpeg", "ffprobe")
-                        if os.path.exists(muxer.ffmpeg().replace("ffmpeg","ffprobe"))
-                        else "ffprobe",
-                        "-v","error","-print_format","json",
-                        "-show_streams","-show_format", path],
-                       capture_output=True, text=True)
-    return json.loads(r.stdout) if r.returncode == 0 else None
+    # Not ffprobe directly: the agent ships ffmpeg alone, so ffprobe is on a
+    # developer's machine and not on a build runner, and a test that needs
+    # it passes in one place and fails in the other.
+    return mediainfo.describe(path)
 
 FPS = 15.0
 rec = Recorder("cam", clips_dir=WORK, fps=FPS, segment_seconds=3,
@@ -74,14 +74,17 @@ if info:
     if a:
         check("audio is AAC mono", a["codec_name"]=="aac" and a["channels"]==1,
               f'{a["codec_name"]} / {a["channels"]}ch / {a["sample_rate"]}Hz')
-    dur = float(info["format"]["duration"])
+    dur = float(info["duration"])
     check("duration is about 3 seconds", 2.3 < dur < 4.2, f"{dur:.2f}s")
 
     v = next((st for st in info["streams"] if st["codec_type"]=="video"), None)
-    if v and a:
-        vd = float(v.get("duration") or dur); ad = float(a.get("duration") or dur)
+    if v and a and v.get("duration") and a.get("duration"):
+        vd, ad = float(v["duration"]), float(a["duration"])
         check("sound and picture are the same length (in sync)",
               abs(vd-ad) < 0.5, f"video {vd:.2f}s vs audio {ad:.2f}s")
+    elif v and a:
+        print("  ..    sync unchecked here - no ffprobe to ask for the "
+              "length of each track")
 
 check("no half-written leftovers",
       not os.listdir(os.path.join(WORK,"cam",".tmp")),
@@ -103,7 +106,7 @@ check("a camera with no microphone still records video", bool(c2), str(c2))
 if c2:
     i2 = probe(os.path.join(WORK,"mute",c2[0]))
     check("that one is video-only, and still plays",
-          i2 is not None and "audio" not in [s["codec_type"] for s in i2["streams"]])
+          i2 is not None and "audio" not in [st["codec_type"] for st in i2["streams"]])
 
 print(f"\n=== {len(PASS)} passed, {len(FAIL)} failed ===")
 for f in FAIL: print("  FAILED:", f)
