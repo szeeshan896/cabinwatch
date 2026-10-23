@@ -126,7 +126,7 @@ jobs:
       # status is printed.
       - name: Build the executable
         run: >
-          pyinstaller --onefile --console
+          pyinstaller --onefile --windowed
           --name CabinWatch-Agent
           --paths agent
           --hidden-import ptz
@@ -141,17 +141,41 @@ jobs:
           --collect-all cv2
           --collect-all sounddevice
           --collect-all imageio_ffmpeg
+          --collect-all pystray
+          --collect-all PIL
           agent/agent.py
 
       # --help alone only proves argparse survived. --list-cameras imports
       # OpenCV, opens a capture and queries the audio devices, which is where
       # a bad bundle actually shows itself.
+      # Built windowed, for the tray, so it has no console: running it and
+      # looking at what it printed no longer works, and PowerShell does not
+      # even wait for a windowed program unless told to. Both of those would
+      # make this check pass without having checked anything, so it waits for
+      # the exit code and then reads the log the agent writes beside itself.
       - name: Check it actually runs
         run: |
           dir dist
-          .\dist\CabinWatch-Agent.exe --help
-          .\dist\CabinWatch-Agent.exe --list-cameras
-          Write-Host "The executable starts and can reach OpenCV and audio."
+          $log = Join-Path (Resolve-Path .\dist) 'cabinwatch.log'
+          if (Test-Path $log) { Remove-Item $log }
+          $run = Start-Process -FilePath .\dist\CabinWatch-Agent.exe `
+                               -ArgumentList '--list-cameras' `
+                               -WorkingDirectory (Resolve-Path .\dist) `
+                               -PassThru -Wait
+          if ($run.ExitCode -ne 0) {
+            throw "the agent exited with $($run.ExitCode)"
+          }
+          if (-not (Test-Path $log)) {
+            throw "no log file: a windowed build with nowhere to talk is one nobody can debug"
+          }
+          Get-Content $log
+          if (-not (Select-String -Path $log -Pattern 'Cameras this machine can open')) {
+            throw "it started but never got as far as looking for cameras"
+          }
+          if (Select-String -Path $log -Pattern 'Traceback|ModuleNotFoundError') {
+            throw "it started and then fell over - see the log above"
+          }
+          Write-Host "The windowed executable runs, finds its parts, and logs."
 
       # A silent recording is the bug this guards against: if ffmpeg did not
       # make it into the bundle, every saved clip loses its sound and nothing

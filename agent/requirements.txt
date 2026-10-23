@@ -19,6 +19,13 @@ imageio-ffmpeg>=0.5.1
 # Drop this line if a camera has no mic and you do not need to talk back.
 sounddevice>=0.4.6
 
+# The tray icon on Windows and macOS. Without these the agent still runs -
+# it prints to the terminal as it always did - but the packaged Windows
+# build has no console at all, so there would be nothing on screen and no
+# way to reach the settings or stop it.
+pystray>=0.19.5
+pillow>=10.0.0
+
 # Only needed for an ONVIF PTZ camera (most rotating IP cameras).
 # onvif-zeep>=0.2.12
 

@@ -562,6 +562,25 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### The laptop agent lives in the tray
+
+There is no console window. The agent sits in the system tray: right-click the
+icon for the settings page, the recordings folder, and a way to stop it that
+is clearly a decision rather than a stray click. The icon dims when no camera
+is connected, so a glance tells you whether it is working.
+
+A window open on the desktop is something people close — usually by accident,
+usually the day the footage mattered.
+
+Because there is no console, everything it would have printed goes to
+**`cabinwatch.log`**, next to the exe. That is the first thing to look at when
+a camera misbehaves overnight, and the first thing to send me. It keeps one
+previous log and never grows past a couple of megabytes. `CABINWATCH_LOG`
+names a different file if you want one somewhere else.
+
+On a machine with no tray — a Linux server, a Pi with no desktop — it prints
+to the terminal exactly as it always did.
+
 ### Making a laptop camera come back by itself
 
 A camera that only runs while somebody has a window open is not a camera. It

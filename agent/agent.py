@@ -42,13 +42,22 @@ import threading
 import datetime
 import urllib.parse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import logfile
+
+# Before anything else that could print. A windowed build - which is what
+# the tray version is - has no stdout at all, and in that state the first
+# print() ends the program with an AttributeError. That includes the one
+# about the microphone, a few lines below.
+LOG_PATH = logfile.start()
+
 import cv2
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 import ptz as ptz_mod
 import autostart
+import tray as tray_mod
 import setup_wizard
 import local_ui
 from resample import Resampler
@@ -1279,6 +1288,11 @@ def list_microphones():
         return []
 
 
+def frozen_without_console():
+    """A packaged build with nowhere to print: nothing on screen at all."""
+    return bool(getattr(sys, "frozen", False)) and LOG_PATH is not None
+
+
 def main():
     ap = argparse.ArgumentParser(description="CabinWatch camera agent")
     ap.add_argument("--only", action="append", default=None,
@@ -1297,6 +1311,8 @@ def main():
     ap.add_argument("--setup", action="store_true",
                     help="ask the setup questions again and overwrite "
                          "cabinwatch.json")
+    ap.add_argument("--no-tray", action="store_true",
+                    help="do not put an icon in the system tray")
     ap.add_argument("--no-panel", action="store_true",
                     help="do not serve the local settings page")
     ap.add_argument("--panel-port", type=int, default=8765,
@@ -1369,6 +1385,8 @@ def main():
 
     print("=" * 62)
     print("  CabinWatch agent")
+    if LOG_PATH:
+        print(f"  log      : {LOG_PATH}")
     print(f"  server   : {cfg.SERVER_URL}")
     print(f"  clips in : {os.path.abspath(cfg.CLIPS_DIR)}")
     print(f"  cameras  : {', '.join(wanted)}")
@@ -1386,15 +1404,39 @@ def main():
             print(f"\n  To change the camera or microphone, open "
                   f"{panel.url} on this machine.\n")
 
+    # On Windows this is built with no console at all, so without the tray
+    # icon there would be nothing on screen to say it is running, and no way
+    # to reach the settings or stop it. Where a tray is not possible it
+    # carries on exactly as before.
+    leaving = threading.Event()
+    icon = None
+    if not args.no_tray:
+        icon = tray_mod.Tray(supervisor,
+                             panel_url=panel.url if panel else None,
+                             on_quit=leaving.set)
+        if icon.start():
+            print("  running in the tray - right-click the icon for "
+                  "settings")
+        else:
+            icon = None
+            if frozen_without_console():
+                print("  no tray icon on this machine; the agent is running "
+                      "with nothing on screen. Open the settings page at "
+                      f"{panel.url if panel else 'the address above'}.")
+
     try:
-        while True:
-            time.sleep(1)
+        while not leaving.wait(1.0):
+            pass
     except KeyboardInterrupt:
-        print("\nstopping...")
-        if panel is not None:
-            panel.stop()
-        supervisor.stop()
-        time.sleep(0.6)
+        pass
+
+    print("\nstopping...")
+    if icon is not None:
+        icon.stop()
+    if panel is not None:
+        panel.stop()
+    supervisor.stop()
+    time.sleep(0.6)
 
 
 if __name__ == "__main__":
