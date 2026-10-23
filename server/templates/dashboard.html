@@ -40,6 +40,12 @@
     overflow: hidden; display: flex; flex-direction: column;
   }
   .cam.alert { border-color: #d29922; }
+  .strip { display: flex; gap: 2px; height: 26px; }
+  .strip i { flex: 1; background: #161b22; border-radius: 2px;
+             cursor: pointer; border: 1px solid #21262d; }
+  .strip i.on { background: #1f6feb; border-color: #1f6feb; }
+  .strip i.hot { background: #d29922; border-color: #d29922; }
+  .clip .kp.cp { background: #238636; }
   .cam.offline { opacity: .7; }
   .cam.offline .screen { background: #0d1117; }
   .gone { color: #d29922; }
@@ -562,51 +568,182 @@ async function clearSchedule(camId) {
     "Schedule removed. Alerts are yours to turn on and off now.";
 }
 
-/* ---------- recordings stored on the device ---------- */
-async function openClips(camId, camName) {
+/* ---------- the recordings ----------
+
+   A flat list of filenames is fine with six of them and useless with six
+   hundred, which is what a day of round-the-clock recording looks like.
+   So: one day at a time, a strip showing where in that day anything was
+   recorded, and a filter for the clips something actually happened in.
+
+   All of that is done here, in the page. The server holds no index and
+   does no searching - it passes on what the device already knows and what
+   it has a copy of, and nothing more. */
+let clipState = { camId: "", camName: "", clips: [], saved: [],
+                  day: "", eventsOnly: false, online: true };
+
+async function openClips(camId, camName, online) {
   const modal = document.getElementById("modal");
-  document.getElementById("mTitle").textContent = `Recordings on ${camName}`;
+  document.getElementById("mTitle").textContent = `Recordings - ${camName}`;
   document.getElementById("mBody").innerHTML =
     `<div style="color:#8b949e;font-size:13px">Asking the device...</div>`;
   modal.classList.add("show");
 
-  let data;
+  clipState = { camId, camName, clips: [], saved: [], day: "",
+                eventsOnly: false, online: online !== false };
+
+  // The copies on the server are worth having either way, and they are the
+  // only thing left to show when the device itself has gone.
   try {
-    const r = await fetch(`/clips/${encodeURIComponent(camId)}`);
-    if (!r.ok) throw new Error(await r.text());
-    data = await r.json();
-  } catch (e) {
-    document.getElementById("mBody").innerHTML =
-      `<div style="color:#f85149;font-size:13px">Could not read the device: ${esc(e.message)}</div>`;
+    const r = await fetch(`/saved?cam=${encodeURIComponent(camId)}`);
+    if (r.ok) clipState.saved = (await r.json()).clips || [];
+  } catch (e) {}
+
+  if (clipState.online) {
+    try {
+      const r = await fetch(`/clips/${encodeURIComponent(camId)}`);
+      if (!r.ok) throw new Error(await r.text());
+      clipState.clips = (await r.json()).clips || [];
+    } catch (e) {
+      clipState.error = e.message;
+    }
+  }
+  renderClips();
+}
+
+function dayKey(at) {
+  const d = new Date(at * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    + `-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayLabel(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  const when = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((today - when) / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return when.toLocaleDateString([], { weekday: "short", day: "numeric",
+                                       month: "short" });
+}
+
+function renderClips() {
+  const st = clipState;
+  const saved = new Map(st.saved.map(r => [r.file, r]));
+
+  // Everything the server has a copy of counts as a recording too, even
+  // when the device that made it is long gone.
+  const all = st.clips.slice();
+  for (const row of st.saved) {
+    if (!all.some(c => c.file === row.file)) {
+      all.push({ file: row.file, at: Math.round(row.at),
+                 size_mb: row.size_mb, keep: true, savedOnly: true });
+    }
+  }
+  all.sort((a, b) => b.at - a.at);
+
+  const days = [...new Set(all.map(c => dayKey(c.at)))];
+  if (!st.day || !days.includes(st.day)) st.day = days[0] || "";
+
+  const shown = all.filter(c => dayKey(c.at) === st.day
+                                && (!st.eventsOnly || c.keep));
+
+  const body = document.getElementById("mBody");
+  if (!all.length) {
+    body.innerHTML = `<div style="color:#8b949e;font-size:13px">`
+      + (st.error ? `Could not read the device: ${esc(st.error)}`
+         : st.online ? "Nothing recorded yet."
+         : "This camera is not reporting, and the server has no copies of "
+           + "its recordings.")
+      + `</div>`;
     return;
   }
 
-  const clips = data.clips || [];
-  document.getElementById("mBody").innerHTML = `
+  body.innerHTML = `
     <video id="mPlayer" controls playsinline style="display:none"></video>
-    <div style="font-size:12px;color:#6e7681;margin-bottom:8px">
-      ${clips.length} files, kept on the device itself. Marked ones are
-      movement or sound and are kept longer.
+    ${st.online ? "" : `<div class="warn" style="margin-bottom:10px">
+      This camera is not reporting. These are the copies kept on the
+      server.</div>`}
+    <div class="btns" style="flex-wrap:wrap;margin-bottom:10px">
+      ${days.slice(0, 8).map(k => `<button data-day="${k}"
+        class="${k === st.day ? "active" : ""}">${esc(dayLabel(k))}</button>`
+      ).join("")}
     </div>
-    ${clips.length ? clips.map(c => `
-      <div class="clip">
-        <span>${esc(c.when)}</span>
-        ${c.keep ? `<span class="kp">EVENT</span>` : ""}
-        <span class="sp">
-          <span style="color:#6e7681;align-self:center">${c.size_mb} MB</span>
-          <button onclick="playClip('${esc(camId)}','${esc(c.file)}')">Play</button>
-          <a href="/clip/${encodeURIComponent(camId)}/${encodeURIComponent(c.file)}"
-             download>Save</a>
-        </span>
-      </div>`).join("") : `<div style="color:#8b949e">Nothing recorded yet.</div>`}
-  `;
+    <div class="btns" style="margin-bottom:10px">
+      <button data-only="0" class="${st.eventsOnly ? "" : "active"}">Everything</button>
+      <button data-only="1" class="${st.eventsOnly ? "active" : ""}">Only what happened</button>
+    </div>
+    <div class="strip" id="clipStrip">${hourStrip(all, st.day)}</div>
+    <div style="font-size:12px;color:#6e7681;margin:8px 0">
+      ${shown.length} of ${all.length} recordings. Marked ones had movement
+      or a sound in them and are kept longer.
+    </div>
+    ${shown.length ? shown.map(c => clipRow(c, saved.get(c.file))).join("")
+      : `<div style="color:#8b949e">Nothing on this day matches.</div>`}`;
+
+  body.querySelectorAll("[data-day]").forEach(b => {
+    b.onclick = () => { clipState.day = b.dataset.day; renderClips(); };
+  });
+  body.querySelectorAll("[data-only]").forEach(b => {
+    b.onclick = () => {
+      clipState.eventsOnly = b.dataset.only === "1"; renderClips();
+    };
+  });
+  body.querySelectorAll("[data-hour]").forEach(b => {
+    b.onclick = () => {
+      const row = document.getElementById("clip-" + b.dataset.hour);
+      if (row) row.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+  });
 }
 
-function playClip(camId, file) {
+/* The day as twenty-four blocks, lit where something was recorded and
+   coloured where something happened. A night of nothing reads as a night
+   of nothing at a glance, which a list of filenames never does. */
+function hourStrip(all, day) {
+  const hours = Array.from({ length: 24 }, () => ({ n: 0, event: false }));
+  for (const c of all) {
+    if (dayKey(c.at) !== day) continue;
+    const h = new Date(c.at * 1000).getHours();
+    hours[h].n++;
+    if (c.keep) hours[h].event = true;
+  }
+  return hours.map((h, i) => {
+    const cls = h.event ? "hot" : (h.n ? "on" : "");
+    const title = h.n ? `${h.n} at ${String(i).padStart(2, "0")}:00`
+                      : `nothing at ${String(i).padStart(2, "0")}:00`;
+    return `<i class="${cls}" data-hour="${i}" title="${title}"></i>`;
+  }).join("");
+}
+
+function clipRow(c, savedRow) {
+  const when = new Date(c.at * 1000);
+  const time = when.toLocaleTimeString([], { hour: "2-digit",
+                                             minute: "2-digit",
+                                             second: "2-digit" });
+  const hour = when.getHours();
+  const src = c.savedOnly
+    ? `/saved/${encodeURIComponent(savedRow.key)}`
+    : `/clip/${encodeURIComponent(clipState.camId)}/${encodeURIComponent(c.file)}`;
+  return `
+    <div class="clip" id="clip-${hour}">
+      <span>${esc(time)}</span>
+      ${c.keep ? `<span class="kp">EVENT</span>` : ""}
+      ${savedRow ? `<span class="kp cp" title="A copy is on the server, so
+        this survives the camera going missing">COPY</span>` : ""}
+      <span class="sp">
+        <span style="color:#6e7681;align-self:center">${c.size_mb} MB</span>
+        <button onclick="playSrc('${esc(src)}')">Play</button>
+        <a href="${esc(src)}" download>Save</a>
+      </span>
+    </div>`;
+}
+
+function playSrc(src) {
   const v = document.getElementById("mPlayer");
   if (!v) return;
   v.style.display = "";
-  v.src = `/clip/${encodeURIComponent(camId)}/${encodeURIComponent(file)}`;
+  v.src = src;
   v.play().catch(() => {});
   v.scrollIntoView({ block: "nearest" });
 }
@@ -787,7 +924,7 @@ function buildCard(c) {
   };
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
-    openClips(id, c2.name || id);
+    openClips(id, c2.name || id, c2.online);
   };
   act("when").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
@@ -868,7 +1005,10 @@ function updateCard(el, c) {
   // Nothing on a camera that is not there can be pressed, and the buttons
   // should look it rather than failing silently when tapped.
   el.querySelectorAll("button, select, input").forEach(b => {
-    if (b.dataset.act === "forget") return;
+    // Remove and Clips still work on a camera that is gone: Clips is how
+    // you reach the copies the server kept, which is the whole point of
+    // having kept them.
+    if (b.dataset.act === "forget" || b.dataset.act === "clips") return;
     b.disabled = !c.online;
   });
   const forget = q('[data-act="forget"]');

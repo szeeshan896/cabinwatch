@@ -562,6 +562,22 @@ A camera that simply stops stays on the dashboard, greyed out, with the time
 it was last heard from, so "when did it go?" has an answer. **Remove** takes
 it off the list once you are done with it.
 
+### Finding a recording
+
+Round-the-clock recording makes several hundred files a day, and a flat list
+of filenames is useless at that size. **Clips** shows one day at a time, with
+the day drawn as twenty-four blocks — lit where something was recorded, amber
+where something happened — so a quiet night reads as a quiet night at a
+glance. **Only what happened** hides the rest.
+
+Clips marked **EVENT** had movement or a sound in them and are kept longer on
+the device. **COPY** means the server has its own copy, so **Clips keeps
+working on a camera that is no longer there** — which is the whole point of
+having kept it.
+
+None of this costs the server anything: it passes on the list the device
+already keeps, and the sorting, grouping and filtering happen in your browser.
+
 ### What each alert means
 
 | Alert | What set it off |
