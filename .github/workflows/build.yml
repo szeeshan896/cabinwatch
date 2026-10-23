@@ -40,7 +40,8 @@ jobs:
           # The camera side without sounddevice: a CI runner has no audio
           # device, and the agent is written to carry on without one.
           pip install "opencv-python>=4.9.0,<5.0" "numpy>=1.24.0" \
-                      "websocket-client>=1.7.0" "imageio-ffmpeg>=0.5.1"
+                      "websocket-client>=1.7.0" "imageio-ffmpeg>=0.5.1" \
+                      "pystray>=0.19.5" "pillow>=10.0.0"
           pip install -r requirements.txt
           pip install playwright
           playwright install --with-deps chromium

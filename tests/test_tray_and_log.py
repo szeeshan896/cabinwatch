@@ -173,8 +173,14 @@ def test_the_icon_says_whether_anything_is_running():
     try:
         watching = tray_mod._icon_image(True)
         stopped = tray_mod._icon_image(False)
+    except ImportError as e:
+        # Drawing needs Pillow. Without it there is no tray either, so
+        # there is nothing here to be wrong - say so rather than fail.
+        return check("Pillow is not here to draw the icon with", True,
+                     f"skipped: {e}")
     except Exception as e:
-        return check("the icon can be drawn", False, str(e))
+        return check("the icon can be drawn", False,
+                     f"{type(e).__name__}: {e}")
 
     ok = check("the icon is drawn rather than shipped as a file",
                watching.size == (64, 64), str(watching.size))
