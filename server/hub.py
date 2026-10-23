@@ -446,6 +446,7 @@ class Hub:
             "events": list(self.events)[-80:][::-1],
             "server_time": time.time(),
             "notifications": bool(settings.NTFY_TOPIC),
+            "hd_seconds": settings.HD_SECONDS,
         }
 
     # -- viewers -------------------------------------------------------------

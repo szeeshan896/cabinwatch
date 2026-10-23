@@ -271,6 +271,31 @@ const KIND_LABEL = {
 /* ---------- status socket ---------- */
 // This device's clock, not the server's. The server is in a datacentre
 // somewhere and its idea of the time is not yours.
+/* HD is for looking closely for a moment, not for leaving on.
+
+   Every frame is a whole JPEG, so HD costs several times what Live does -
+   measured at about 450 MB an hour against 150. Left on by accident
+   overnight that is somebody's data allowance, so it falls back by itself
+   and says that it has. Pressing HD again starts the clock over. */
+let hdSeconds = 120, hdTimer = null;
+
+function holdHD(camId) {
+  clearTimeout(hdTimer);
+  if (!hdSeconds) return;
+  hdTimer = setTimeout(() => {
+    if (modes[camId] !== "hd") return;
+    setMode(camId, "live");
+    const card = document.getElementById("cam-" + camId);
+    const note = card && card.querySelector(".still");
+    if (note) {
+      const was = note.innerHTML;
+      note.innerHTML = "<b>back to Live</b> - HD costs several times as much";
+      setTimeout(() => { if (note.innerHTML.includes("back to Live"))
+                           note.innerHTML = was; }, 6000);
+    }
+  }, hdSeconds * 1000);
+}
+
 function startClock() {
   const tick = () => {
     document.getElementById("clock").textContent = clockStamp();
@@ -285,6 +310,7 @@ function connectDash() {
   ws.onmessage = (e) => {
     const s = JSON.parse(e.data);
     cams = s.cameras; events = s.events;
+    if (s.hd_seconds != null) hdSeconds = s.hd_seconds;
     renderBanner(s);
     render();
   };
@@ -304,6 +330,7 @@ function renderBanner(s) {
 /* ---------- frame + audio socket per camera ---------- */
 function setMode(camId, mode) {
   modes[camId] = mode;
+  if (mode === "hd") holdHD(camId); else clearTimeout(hdTimer);
   if (mode === "off") {
     if (listening[camId]) setListen(camId, false);
     if (talkCam === camId) stopTalk();
@@ -836,6 +863,7 @@ function render() {
 function buildCard(c) {
   const el = document.createElement("div");
   el.className = "cam";
+  el.id = "cam-" + c.id;
   el.innerHTML = `
     <div class="top">
       <span class="dot"></span>

@@ -89,9 +89,19 @@ LIVE_WIDTH = _int("LIVE_WIDTH", 480)
 LIVE_FPS = _float("LIVE_FPS", 4.0)
 LIVE_QUALITY = _int("LIVE_QUALITY", 55)
 
-HD_WIDTH = _int("HD_WIDTH", 1280)
-HD_FPS = _float("HD_FPS", 12.0)
-HD_QUALITY = _int("HD_QUALITY", 75)
+# HD used to be 1280 wide at 12 fps, which measured at 1.7 GB for an hour
+# of watching on a real camera frame - on the phone's data and through the
+# server both. Every frame is a whole JPEG, so the cost is the frame size
+# times the frame rate and nothing clever happens in between.
+#
+# These defaults put it near 450 MB an hour and still show a face clearly.
+# HD is for looking closely for a moment, not for leaving on, and the
+# dashboard drops back to Live by itself after a couple of minutes.
+HD_WIDTH = _int("HD_WIDTH", 960)
+HD_FPS = _float("HD_FPS", 6.0)
+HD_QUALITY = _int("HD_QUALITY", 68)
+# How long HD stays on before falling back on its own. 0 turns that off.
+HD_SECONDS = _float("HD_SECONDS", 120.0)
 
 # Snapshot mode: one still every N seconds. Cheapest way to peek.
 SNAPSHOT_EVERY = _float("SNAPSHOT_EVERY", 2.0)

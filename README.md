@@ -614,10 +614,30 @@ rest are held back.
 
 ### Keeping the data bill small
 
-Video only moves while you are actually looking. At the defaults, Live costs
-roughly 150–200 MB per hour of watching and Snap is a small fraction of that;
-HD is several times more, so use it in bursts. Closing the dashboard tab, or
-even switching away from it, stops the stream by itself.
+Video only moves while you are actually looking, and every frame on the wire
+is a whole JPEG — nothing is shared between one frame and the next, so the
+bill is the size of a frame times the frame rate. Measured on a real frame
+from a real camera:
+
+| Mode | Per hour of watching |
+|---|---|
+| **Live** 480px, 4 fps | about **120 MB** |
+| **HD** 960px, 6 fps | about **530 MB** |
+| **Snap** one still every 2s | a small fraction of Live |
+
+HD used to be 1280px at 12 fps, which measured at **1.7 GB an hour** — left on
+by accident overnight, somebody's whole data allowance. It is smaller and
+slower now, and **falls back to Live by itself after two minutes** and says so.
+HD is for looking closely for a moment, not for leaving on.
+
+Closing the dashboard tab, or even switching away from it, stops the stream by
+itself.
+
+Sending whole frames is the expensive part of all this. The same picture as
+H.264 measures about **86% smaller** (`tests/test_live_cost.py` measures it on
+every run), so moving the live view to a real video codec is the one change
+left that would make a large difference — and it is a rewrite of the whole
+video path, so it is written down here rather than done quietly.
 
 ---
 
