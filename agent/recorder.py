@@ -335,6 +335,16 @@ class Recorder:
             declared_fps=self.fps, frames=frames, seconds=seconds,
             on_done=finished))
 
+    def flush(self):
+        """Finish the clip being written, and keep going afterwards.
+
+        Used when the camera is about to be shut for a while: without it
+        the open segment would sit half-written until something happened
+        to close it, and a half-written segment is the one that cannot be
+        played.
+        """
+        self._close()
+
     def stop(self, timeout=25.0):
         """Close the open clip and wait for it to finish being written.
 

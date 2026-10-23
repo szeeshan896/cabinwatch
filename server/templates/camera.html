@@ -389,6 +389,15 @@ let noiseFilter = true;
    use to anyone. Set from the dashboard, or worked out from gravity when
    the camera starts. */
 let rotate = 0;
+
+/* Standby: hold the connection and shut everything else down.
+
+   A phone watching a room runs its camera and its microphone without a
+   pause, and on battery alone it is flat by morning - at which point it
+   is not a camera at all. In standby it stops recording and stops
+   watching for movement, which is the trade, and wakes the moment
+   somebody asks to look. */
+let standby = false, awake = true;
 let baseline = 0.004, loudSince = 0;
 
 function startAudioAnalysis() {
@@ -881,10 +890,17 @@ async function handle(m) {
   switch (m.t) {
     case "stream":
       if (m.on) startFrames(m); else stopFrames();
+      applySleep();
+      break;
+    case "standby":
+      standby = !!m.on;
+      log("standby " + (standby ? "on" : "off"));
+      applySleep();
       break;
     case "audio":
       sendAudio = !!m.on;
       if (sendAudio && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      applySleep();
       break;
     case "talk":
       if (m.on && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
@@ -1021,6 +1037,8 @@ function pushState() {
     alarm: alarmOn,
     noise_filter: noiseFilter,
     rotate: rotate,
+    standby: standby,
+    asleep: !awake,
     ptz: false
   });
   paintStats();
@@ -1061,6 +1079,41 @@ function ago(ms) {
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   return `${Math.round(s / 360) / 10} h ago`;
+}
+
+/* Open or shut the camera to match whether anybody is watching.
+
+   Releasing the tracks is what actually saves the battery - a paused
+   <video> still holds the camera open and the phone still powers it. */
+async function applySleep() {
+  const wanted = !standby || !!streamSpec || sendAudio;
+  if (wanted === awake) return;
+  awake = wanted;
+
+  if (!wanted) {
+    stopRecorder();
+    if (stream) {
+      stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+      stream = null;
+      video.srcObject = null;
+    }
+    prevGray = null;
+    log("standby - camera released");
+  } else {
+    try {
+      stream = await openStream(activeLens);
+      video.srcObject = stream;
+      prevGray = null;
+      startAudioAnalysis();
+      if (!paused) startRecorder();
+      log("awake - camera open again");
+    } catch (e) {
+      log("could not reopen the camera: " + e.message);
+      awake = false;
+    }
+  }
+  pushState();
+  paintStats();
 }
 
 /* =======================================================================

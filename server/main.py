@@ -54,6 +54,7 @@ SIMPLE_COMMANDS = {
     "rotate":  "rotate",        # {"value": 0|90|180|270} - stand the view up
     "alarm":   "alarm",         # {"on": bool} - siren and torch, as a scare
     "person":  "person_detection",  # {"on": bool} - only alert on people
+    "standby": "standby",       # {"on": bool} - sleep until somebody looks
     "ptz":     "ptz",           # {"action": "left"|"right"|"up"|"down"|
                                 #  "stop"|"preset"|"save_preset"|"home",
                                 #  "speed": 0..1, "preset": "<name>"}
@@ -368,6 +369,50 @@ async def _watch_the_power(cam: Camera):
     return ev
 
 
+async def _watch_the_battery(cam: Camera):
+    """Keep a camera alive long enough to be useful.
+
+    A phone left watching a room overnight runs its camera, its encoder
+    and its microphone the whole time. On battery alone it does not see
+    the morning - and a flat phone is worth nothing at all: it cannot be
+    woken, it cannot say where it is, it is simply gone.
+
+    So there are two steps before that. A warning while there is still
+    time to walk over with a cable, and then standby, where it holds the
+    connection and nothing else. It stops recording and stops watching for
+    movement - which is the trade, and why it says so plainly - but it can
+    still be woken to look, and it will still be there in the morning.
+    """
+    level = cam.state.get("battery")
+    if level is None or cam.state.get("charging"):
+        cam._battery_warned = False
+        return
+
+    if (level <= settings.STANDBY_BELOW and not cam.state.get("standby")
+            and not getattr(cam, "_standby_asked", False)):
+        cam._standby_asked = True
+        detail = (f"{cam.name} is down to {level}% and not charging, so it "
+                  f"has gone to standby. It is no longer recording or "
+                  f"watching for movement, but you can still open it to "
+                  f"look - and it will still be there in the morning.")
+        await cam.send({"t": "standby", "on": True})
+        hub.add_event(cam.cam_id, cam.name, "standby", detail)
+        await notifier.send(cam.cam_id, cam.name, "standby", detail)
+        return
+
+    if level > settings.STANDBY_BELOW:
+        cam._standby_asked = False
+
+    if (level <= settings.BATTERY_WARN_BELOW
+            and not getattr(cam, "_battery_warned", False)):
+        cam._battery_warned = True
+        detail = (f"{cam.name} is on battery at {level}% and is not "
+                  f"charging. Watching a room is what empties a phone; "
+                  f"plug it in or it will not last the night.")
+        hub.add_event(cam.cam_id, cam.name, "battery_low", detail)
+        await notifier.send(cam.cam_id, cam.name, "battery_low", detail)
+
+
 async def _keep_a_copy(cam: Camera, filename: str):
     """Pull one clip off a camera and put it in the evidence store."""
     if "/" in filename or "\\" in filename or ".." in filename:
@@ -594,6 +639,7 @@ async def _on_camera_message(cam: Camera, text: str):
         if msg.get("name"):
             cam.name = msg["name"]
         await _watch_the_power(cam)
+        await _watch_the_battery(cam)
         await hub.broadcast_state()
 
     elif t == "event":

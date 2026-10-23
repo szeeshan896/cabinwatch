@@ -598,6 +598,39 @@ A camera that simply stops stays on the dashboard, greyed out, with the time
 it was last heard from, so "when did it go?" has an answer. **Remove** takes
 it off the list once you are done with it.
 
+### A phone on battery will not last the night
+
+Watching a room is what empties a phone. The camera, the encoder and the
+microphone run without a pause whether or not anybody is looking — so a spare
+phone left watching, unplugged, is switched off at zero by morning. Nothing is
+wrong when that happens; that is simply what it costs.
+
+**A camera meant to stay on belongs on a charger.** The app holds the screen
+dim, not off, and no setting changes the arithmetic.
+
+For the times you forget, there is **Standby**. The camera holds its
+connection and shuts everything else down, wakes the moment you open it to
+look, and goes back when you stop. The battery then lasts for days rather than
+hours.
+
+**What standby costs, plainly:** it is not recording and it is not watching
+for movement, so it raises no alerts at all while it sleeps. It is the right
+state for a spare phone you left somewhere, and the wrong one for the camera
+over a cot.
+
+You can put a camera there yourself with **Standby** on its card. The server
+also does it on its own, because forgetting the charger is the mistake that
+actually happens:
+
+- below **55%** and not charging, it warns you while there is still time to
+  walk over with a cable
+- below **30%**, it goes to standby and says so
+
+A flat phone is worth less than no camera at all — it cannot be woken, it
+cannot tell you where it is, it is simply gone. A sleeping one is still there
+in the morning. Both thresholds are settings (`BATTERY_WARN_BELOW`,
+`STANDBY_BELOW`); a camera on charge is never touched.
+
 ### When a camera is unplugged
 
 Pulling the charger is the first thing anybody does to a phone they are

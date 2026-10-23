@@ -232,6 +232,10 @@ class CameraSession:
         self.talk_queue = queue.Queue(maxsize=80)
         self.alarm = False
         self._alarm_until = 0.0
+        # Standby: hold the connection, shut everything else down, and wake
+        # when somebody asks to look.
+        self.standby = bool(conf.get("standby",
+                                     getattr(cfg, "STANDBY", False)))
 
         # -- pan / tilt
         self.ptz = ptz_mod.build(conf.get("ptz"), cap=None)
@@ -498,6 +502,9 @@ class CameraSession:
             except (TypeError, ValueError):
                 pass
 
+        elif t == "standby":
+            self.set_standby(m.get("on"))
+
         elif t == "person_detection":
             self.person.enabled = bool(m.get("on"))
             print(f"[{self.cam_id}] alert on "
@@ -638,6 +645,28 @@ class CameraSession:
         last_person_check = 0.0
 
         while not self._stop.is_set():
+            # Asleep: the camera is closed and nothing is being read, which
+            # is the whole point - on a phone this is the difference
+            # between a flat battery by morning and a camera you can still
+            # wake at six. Anybody asking to watch wakes it.
+            if self.asleep():
+                if self.cap is not None:
+                    print(f"[{self.cam_id}] going to standby - "
+                          f"releasing the camera")
+                    self.rec.flush()
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+                    self.cap = None
+                    self.status = "standby"
+                    self.push_state()
+                self._stop.wait(0.4)
+                continue
+
+            if self.cap is None and self.standby:
+                print(f"[{self.cam_id}] waking up - somebody is watching")
+
             if self.cap is None:
                 self.status = "connecting"
                 self.cap = self.open_capture(self.source)
@@ -953,6 +982,35 @@ class CameraSession:
     # should not be throttled by whatever else has been happening.
     SLOW_KINDS = {"moved": 120.0}
 
+    def asleep(self):
+        """Should the camera be shut right now?
+
+        Standby means: hold the connection and nothing else. No recording,
+        no movement detection, no microphone - and so no alerts either,
+        which is the trade and why it is a choice rather than a default.
+        Anybody actually watching overrides it, so pressing Live on the
+        dashboard wakes the camera and stopping puts it back.
+        """
+        if not self.standby:
+            return False
+        with self.stream_lock:
+            watching = self.stream_spec is not None
+        return not watching and not self.send_audio
+
+    def set_standby(self, on, why=""):
+        on = bool(on)
+        if on == self.standby:
+            return
+        self.standby = on
+        print(f"[{self.cam_id}] standby {'on' if on else 'off'}"
+              + (f" - {why}" if why else ""))
+        if on:
+            self.send({"t": "event", "kind": "standby",
+                       "detail": why or f"{self.name} is in standby. It is "
+                                        f"not recording or watching for "
+                                        f"movement until you look."})
+        self.push_state()
+
     def _clip_finished(self, name, was_event):
         """A segment is written and playable. Offer it if it matters."""
         if not was_event or not self.upload_events:
@@ -1041,6 +1099,8 @@ class CameraSession:
             "zoom": self.zoom,
             "rotate": self.rotate,
             "alarm": bool(self.alarm),
+            "standby": bool(self.standby),
+            "asleep": bool(self.asleep()),
             "person_detection": bool(self.person.enabled
                                      and not self.baby_mode),
             "has_siren": bool(self.speaker_enabled),

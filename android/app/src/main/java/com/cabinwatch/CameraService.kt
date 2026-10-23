@@ -87,6 +87,20 @@ class CameraService : LifecycleService(), WsClient.Events {
     private var camera: Camera? = null
     private var analysis: ImageAnalysis? = null
     private val person = PersonDetector()
+
+    /**
+     * Standby: hold the connection and shut everything else down.
+     *
+     * A phone watching a room runs its camera, its encoder and its
+     * microphone without a pause, and on battery alone it is flat by
+     * morning - at which point it is not a camera at all, it is a brick
+     * that cannot even tell you where it is. In standby it stops
+     * recording and stops watching for movement, which is the trade, and
+     * wakes the moment somebody asks to look.
+     */
+    private var standby = false
+    // The service binds the camera as it starts, so it begins awake.
+    private var awake = true
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
     private var currentClipName: String? = null
@@ -204,6 +218,42 @@ class CameraService : LifecycleService(), WsClient.Events {
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (settings.running) Watchdog.schedule(this)
         super.onTaskRemoved(rootIntent)
+    }
+
+    /**
+     * Open or shut the camera to match whether anybody is watching.
+     *
+     * Called whenever that could have changed. Doing nothing when it has
+     * not changed matters: binding the camera takes a moment and a phone
+     * that rebound it on every message would be worse than one that never
+     * slept at all.
+     */
+    private fun applySleep() {
+        val wanted = !standby || streaming || sendMic
+        if (wanted == awake) return
+        awake = wanted
+
+        if (wanted) {
+            Log.i(TAG, "waking the camera")
+            statusText = "live"
+            provider?.let { bind(it) }
+            startMic()
+        } else {
+            Log.i(TAG, "going to standby - releasing the camera")
+            statusText = "standby"
+            stopSegment()
+            stopMic()
+            try {
+                provider?.unbindAll()
+            } catch (e: Exception) {
+                Log.w(TAG, "could not release the camera: ${e.message}")
+            }
+            analysis = null
+            videoCapture = null
+            motion.reset()
+        }
+        updateNotification()
+        pushState()
     }
 
     private fun stopEverything() {
@@ -1080,8 +1130,19 @@ class CameraService : LifecycleService(), WsClient.Events {
                     streamFps = msg.optDouble("fps", 4.0).toFloat()
                     streamQuality = msg.optInt("quality", 55)
                 }
+                // Somebody is looking: wake up for as long as they are,
+                // then go back to sleep.
+                handler.post { applySleep() }
             }
-            "audio" -> sendMic = msg.optBoolean("on")
+            "audio" -> {
+                sendMic = msg.optBoolean("on")
+                handler.post { applySleep() }
+            }
+            "standby" -> {
+                standby = msg.optBoolean("on")
+                Log.i(TAG, "standby ${if (standby) "on" else "off"}")
+                handler.post { applySleep() }
+            }
             "talk" -> if (msg.optBoolean("on")) ensureAudioTrack()
             "alarm" -> handler.post { setAlarm(msg.optBoolean("on")) }
             "record" -> {
@@ -1248,6 +1309,8 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("baby_mode", settings.babyMode)
             put("noise_filter", settings.noiseFilter)
             put("person_detection", settings.personDetection && !settings.babyMode)
+            put("standby", standby)
+            put("asleep", !awake)
             put("rotate", settings.rotate)
             put("alarm", sirenOn.get())
             put("has_siren", true)

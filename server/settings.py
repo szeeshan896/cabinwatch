@@ -121,6 +121,16 @@ EVIDENCE_KINDS = tuple(
     _env("EVIDENCE_KINDS", "person,impact,moved,cry").split(",") if k.strip()
 )
 
+# -- battery -----------------------------------------------------------------
+# A phone left watching a room runs its camera, its encoder and its
+# microphone the whole time, and on battery alone it will not see the
+# morning. A flat phone is worth nothing at all; a phone in standby still
+# answers, still says where it is, and can still be woken to look. So
+# below this, and not charging, it puts itself in standby and says so.
+STANDBY_BELOW = _int("STANDBY_BELOW", 30)
+# And a warning before that, while there is still time to plug it in.
+BATTERY_WARN_BELOW = _int("BATTERY_WARN_BELOW", 55)
+
 # -- housekeeping ------------------------------------------------------------
 EVENT_HISTORY = _int("EVENT_HISTORY", 300)      # events kept in memory
 # Where the history is written so it survives a restart. The pictures are

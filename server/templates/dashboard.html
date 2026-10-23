@@ -265,7 +265,8 @@ const KIND_LABEL = {
   impact: "Thud / fall", person: "Person seen", offline: "Camera offline",
   online: "Camera online", disk: "Storage low", test: "Test alert",
   moved: "Camera was moved", battery_low: "Battery low",
-  conflict: "Two devices, one name", unplugged: "Unplugged"
+  conflict: "Two devices, one name", unplugged: "Unplugged",
+  standby: "Camera went to standby"
 };
 
 /* ---------- status socket ---------- */
@@ -904,6 +905,7 @@ function buildCard(c) {
         <button data-act="clips">Clips</button>
         <button data-act="when" title="Set the hours you are normally there, so it arms itself around you">Hours</button>
         <button data-act="people" title="Only raise an alert when somebody is actually in view - a curtain or a fan will not">People only</button>
+        <button data-act="standby" title="Sleep until you ask to look. Saves the battery on a phone that is not plugged in, but it stops recording and stops watching for movement while it sleeps">Standby</button>
         <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
         <button data-act="rotate" title="Turn the picture a quarter turn - for a camera that is not mounted the right way up">Rotate</button>
         <button data-act="alarm" title="Sound a siren and flash the torch on the device itself">Siren</button>
@@ -954,6 +956,17 @@ function buildCard(c) {
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id, c2.online);
+  };
+  act("standby").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    if (!c2.standby && !confirm(
+        `Put "${c2.name || id}" on standby?\n\n`
+        + `It will stop recording and stop watching for movement, and it `
+        + `will not raise any alerts. It wakes when you open it to look, `
+        + `and goes back when you stop.\n\n`
+        + `This is for a camera on battery that would otherwise be flat by `
+        + `morning. A camera that is plugged in should stay awake.`)) return;
+    cmd(id, "standby", { on: !c2.standby });
   };
   act("people").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
@@ -1027,6 +1040,7 @@ function updateCard(el, c) {
   }
 
   const tags = [];
+  if (c.asleep)    tags.push('<span class="tag pause">ASLEEP</span>');
   if (c.paused)    tags.push('<span class="tag pause">PAUSED</span>');
   if (c.recording) tags.push('<span class="tag rec">REC</span>');
   if (c.motion)    tags.push('<span class="tag mot">MOVING</span>');
@@ -1113,6 +1127,10 @@ function updateCard(el, c) {
 
   // Say which way it is turned, so a camera left sideways is obvious
   // without having to work it out from the picture.
+  const sleep = q('[data-act="standby"]');
+  setText(sleep, c.asleep ? "Asleep - tap to watch" : "Standby");
+  sleep.classList.toggle("active", !!c.standby);
+
   // Only meaningful away from a cot: for a baby, any movement is the point.
   const people = q('[data-act="people"]');
   people.classList.toggle("active", !!c.person_detection);

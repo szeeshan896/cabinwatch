@@ -29,6 +29,7 @@ KINDS = {
     "moved":   ("Camera was moved",     5, "rotating_light"),
     "battery_low": ("Camera battery low", 4, "battery"),
     "unplugged": ("Camera was unplugged", 5, "electric_plug"),
+    "standby": ("Camera went to standby", 4, "battery"),
     "conflict": ("Two cameras, one name", 4, "warning"),
     "offline": ("Camera went offline",  4, "warning"),
     "online":  ("Camera back online",   2, "white_check_mark"),
@@ -40,7 +41,7 @@ KINDS = {
 # A camera being interfered with, or about to die, matters at 3am as much
 # as at noon - more, in fact.
 ALWAYS_PUSH = {"impact", "cry", "person", "offline", "moved", "battery_low",
-               "unplugged"}
+               "unplugged", "standby"}
 
 
 class Notifier:

@@ -36,7 +36,7 @@ STATE_FIELDS = (
     "quiet_for_s", "silent_for_s", "moved_ago_s", "battery", "charging",
     "location", "noise_filter", "ptz",
     "ptz_presets", "lenses", "active_lens", "zoom", "rotate", "alarm",
-    "person_detection",
+    "person_detection", "standby", "asleep",
     "has_siren", "has_audio",
     "has_speaker",
 )
@@ -95,6 +95,8 @@ class Camera:
             "zoom": 1.0,
             "rotate": 0,                 # degrees to stand the picture up
             "alarm": False,              # siren and torch going
+            "standby": False,            # holding the line, nothing else
+            "asleep": False,             # standby and nobody watching
             "person_detection": False,   # only alert when somebody is seen
             "has_siren": False,          # this device can make a noise
             "has_audio": False,
