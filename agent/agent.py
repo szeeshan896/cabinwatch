@@ -224,6 +224,11 @@ class CameraSession:
         self.ptz = ptz_mod.build(conf.get("ptz"), cap=None)
         self.ptz_autostop = ptz_mod.AutoStop(self.ptz)
         self.zoom = 1.0
+        # A camera is not always mounted the right way up - a phone hung
+        # upside down, a webcam clipped on sideways. Turning the picture
+        # here, before anything else sees it, means the recordings and the
+        # movement detection are straight too, not only the live view.
+        self.rotate = self._clean_rotation(conf.get("rotate", 0))
 
         # -- streaming to the dashboard
         self.stream_spec = None
@@ -318,7 +323,7 @@ class CameraSession:
         with self.stream_lock:
             self.stream_spec = None
         self.send_audio = False
-        if code in (4401, 4400):
+        if code in (4401, 4400, 4409):
             self._explain(code)
 
     def _on_error(self, ws, error):
@@ -393,6 +398,20 @@ class CameraSession:
                 f"camera id.\n"
                 f"    Use only letters, numbers, - and _ ."
             )
+        elif code == 4409:
+            self._explain_once(
+                "4409",
+                f"[{self.cam_id}] REFUSED: another device is already "
+                f"connected as '{self.cam_id}',\n"
+                f"    and it is still running - so this one has been turned "
+                f"away rather than\n"
+                f"    knocking it off. Two devices sharing one name take "
+                f"turns throwing each\n"
+                f"    other off the server, and their pictures and alerts "
+                f"land under one name.\n"
+                f"    Give this camera a different name (run with --setup) "
+                f"and it will connect."
+            )
 
     def _on_message(self, ws, message):
         if isinstance(message, (bytes, bytearray)):
@@ -465,6 +484,16 @@ class CameraSession:
                 self.zoom = max(1.0, min(4.0, float(m.get("value", 1))))
             except (TypeError, ValueError):
                 pass
+
+        elif t == "rotate":
+            self.rotate = self._clean_rotation(m.get("value", 0))
+            # The picture is a different shape now, so what the detector
+            # learned about the old one is worthless.
+            self.motion.reset()
+            if self.tamper is not None:
+                self.tamper.reset()
+            print(f"[{self.cam_id}] picture turned {self.rotate} degrees")
+            self.push_state()
 
         elif t == "ptz":
             self._do_ptz(m)
@@ -562,6 +591,24 @@ class CameraSession:
                 pass
         self.push_state()
 
+    @staticmethod
+    def _clean_rotation(value):
+        try:
+            turn = int(value) % 360
+        except (TypeError, ValueError):
+            return 0
+        return turn if turn in (0, 90, 180, 270) else 0
+
+    TURNS = {
+        90: cv2.ROTATE_90_CLOCKWISE,
+        180: cv2.ROTATE_180,
+        270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    }
+
+    def upright(self, frame):
+        turn = self.TURNS.get(self.rotate)
+        return frame if turn is None else cv2.rotate(frame, turn)
+
     def capture_loop(self):
         fail = 0
         period = 1.0 / max(1.0, self.target_fps)
@@ -578,6 +625,8 @@ class CameraSession:
                 self.motion.reset()
 
             ok, frame = self.cap.read()
+            if ok and frame is not None and self.rotate:
+                frame = self.upright(frame)
             if not ok or frame is None:
                 fail += 1
                 if fail > 10:
@@ -918,6 +967,7 @@ class CameraSession:
                        for l in self.lenses],
             "active_lens": self.active_lens,
             "zoom": self.zoom,
+            "rotate": self.rotate,
             "noise_filter": bool(self.denoise),
             "has_audio": bool(self.audio_enabled),
             "has_speaker": bool(self.speaker_enabled),

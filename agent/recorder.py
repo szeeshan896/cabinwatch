@@ -65,6 +65,7 @@ class Recorder:
 
         self._writer = None
         self._current = None
+        self._names = set()          # clip names already handed out
         self._started_at = 0.0
         self._size = None
         self._lock = threading.Lock()
@@ -174,6 +175,15 @@ class Recorder:
                 self._close()
             return
 
+        # A segment is written at one fixed size. If the picture changes
+        # shape under us - the view was turned upright, a different lens was
+        # chosen - every later frame would be silently dropped and the clip
+        # would end up frozen on its first frame. So start a new one.
+        height, width = frame.shape[:2]
+        if self._writer is not None and self._size != (width, height):
+            self._close()
+            self._prebuffer.clear()
+
         if self._writer is not None and \
                 now - self._started_at >= self.segment_seconds:
             self._close()
@@ -214,9 +224,25 @@ class Recorder:
     def _open(self, frame):
         h, w = frame.shape[:2]
         ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        name = f"{ts}.mp4"
-        video_tmp = os.path.join(self.tmp_dir, f"{ts}.video.mp4")
-        audio_tmp = os.path.join(self.tmp_dir, f"{ts}.audio.wav")
+
+        # Clips are named after the second they start in, and two can start
+        # inside one second - a very short segment, or the picture changing
+        # shape. Without this the second one quietly writes over the first,
+        # and the recording you wanted is the one that is gone. The finished
+        # clip may still be in the muxer when the next one starts, so the
+        # name it will take has to be remembered rather than looked for.
+        stamp, n = ts, 1
+        while (stamp in self._names
+               or os.path.exists(os.path.join(self.dir, f"{stamp}.mp4"))
+               or os.path.exists(os.path.join(self.tmp_dir,
+                                              f"{stamp}.video.mp4"))):
+            n += 1
+            stamp = f"{ts}-{n}"
+        self._names.add(stamp)
+
+        name = f"{stamp}.mp4"
+        video_tmp = os.path.join(self.tmp_dir, f"{stamp}.video.mp4")
+        audio_tmp = os.path.join(self.tmp_dir, f"{stamp}.audio.wav")
 
         # mp4v is the codec OpenCV can always write without extra packages.
         writer = cv2.VideoWriter(video_tmp, cv2.VideoWriter_fourcc(*"mp4v"),

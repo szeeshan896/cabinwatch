@@ -382,6 +382,13 @@ let micSource = null, micNode = null;
 // A fan or cooler is steady noise; the browser's own suppressor is built for
 // exactly that, and leaves the voice band where a cry sits.
 let noiseFilter = true;
+
+/* How far the picture has to be turned to come out the right way up. A
+   phone propped against a pillow or hung upside down over a cot is not
+   mounted the way the camera assumes, and a sideways view of a baby is no
+   use to anyone. Set from the dashboard, or worked out from gravity when
+   the camera starts. */
+let rotate = 0;
 let baseline = 0.004, loudSince = 0;
 
 function startAudioAnalysis() {
@@ -594,6 +601,53 @@ function stopRecorder() {
   recorder = null;
 }
 
+/* Which way is up, from gravity.
+
+   Only worth asking while the phone is standing more or less upright: lying
+   flat on a table there is no sideways gravity to read and the answer would
+   be noise. Anything set by hand from the dashboard wins and is never
+   overruled - the person looking at the picture knows better than we do. */
+let rotationChosen = false;
+
+function guessRotation(a) {
+  if (rotationChosen) return;
+  const x = a.x || 0, y = a.y || 0, z = a.z || 0;
+  if (Math.abs(z) > 7.5) return;             // lying flat, nothing to tell
+  const sideways = Math.hypot(x, y);
+  if (sideways < 7.0) return;                // tilted, not clearly on an edge
+
+  let want = 0;
+  if (Math.abs(y) > Math.abs(x)) {
+    want = y > 0 ? 0 : 180;                  // upright, or hung upside down
+  } else {
+    want = x > 0 ? 270 : 90;                 // resting on its side
+  }
+  if (want !== rotate) {
+    rotate = want;
+    applyRotation();
+    log(`picture turned ${rotate} degrees to stand it up`);
+    pushState();
+  }
+  rotationChosen = true;     // decided once, at the start; no wobbling after
+}
+
+function setRotation(value) {
+  const turn = ((Number(value) || 0) % 360 + 360) % 360;
+  rotate = [0, 90, 180, 270].includes(turn) ? turn : 0;
+  rotationChosen = true;                     // chosen by hand: leave it alone
+  applyRotation();
+  pushState();
+}
+
+function applyRotation() {
+  // The preview on the phone itself is turned with it, so what you see on
+  // the phone is what the dashboard sees.
+  video.style.transform = rotate ? `rotate(${rotate}deg)` : "";
+  // The old picture was a different shape, so what the movement detector
+  // learned from it is worthless.
+  prevGray = null;
+}
+
 /* =======================================================================
    Watching the device itself
    ======================================================================= */
@@ -614,6 +668,7 @@ function onMotion(e) {
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null) return;
   const force = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+  guessRotation(a);
 
   // Learn what "sitting still" weighs here, so it works whichever way up
   // the phone is propped.
@@ -683,10 +738,29 @@ function grabThumb() {
   try {
     if (!video.videoWidth) return null;
     const w = 320, h = Math.round(w * video.videoHeight / video.videoWidth);
-    canvas.width = w; canvas.height = h;
-    ctx.drawImage(video, 0, 0, w, h);
+    turnedInto(canvas, w, h, () => ctx.drawImage(video, 0, 0, w, h));
     return canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
   } catch (e) { return null; }
+}
+
+/* Size the canvas for the turned picture and draw into it turned.
+
+   A quarter turn swaps width and height, so the canvas cannot simply be
+   the size of the video; get that wrong and the picture is cropped to a
+   letterbox instead of rotated. */
+function turnedInto(cv, w, h, draw) {
+  const quarter = rotate === 90 || rotate === 270;
+  cv.width = quarter ? h : w;
+  cv.height = quarter ? w : h;
+  const c = cv.getContext("2d", { alpha: false });
+  c.save();
+  if (rotate) {
+    c.translate(cv.width / 2, cv.height / 2);
+    c.rotate(rotate * Math.PI / 180);
+    c.translate(-w / 2, -h / 2);
+  }
+  draw(c);
+  c.restore();
 }
 
 /* =======================================================================
@@ -697,23 +771,27 @@ function drawFrame(width) {
   const vw = video.videoWidth, vh = video.videoHeight;
   const w = Math.min(width, vw);
   const h = Math.round(w * vh / vw);
-  canvas.width = w; canvas.height = h;
 
-  if (zoom > 1.01) {
-    // Digital zoom: a phone has no motor, so crop the centre instead.
-    const cw = vw / zoom, chh = vh / zoom;
-    ctx.drawImage(video, (vw - cw) / 2, (vh - chh) / 2, cw, chh, 0, 0, w, h);
-  } else {
-    ctx.drawImage(video, 0, 0, w, h);
-  }
+  turnedInto(canvas, w, h, (c) => {
+    if (zoom > 1.01) {
+      // Digital zoom: a phone has no motor, so crop the centre instead.
+      const cw = vw / zoom, chh = vh / zoom;
+      c.drawImage(video, (vw - cw) / 2, (vh - chh) / 2, cw, chh, 0, 0, w, h);
+    } else {
+      c.drawImage(video, 0, 0, w, h);
+    }
+  });
 
-  // Burn in the name and time so a saved screenshot still proves when.
-  const pad = Math.max(10, Math.round(h * 0.045));
+  // Burn in the name and time so a saved screenshot still proves when. This
+  // goes on after the turn, so it reads the right way up whatever the phone
+  // is lying on.
+  const cw2 = canvas.width, ch2 = canvas.height;
+  const pad = Math.max(10, Math.round(ch2 * 0.045));
   ctx.fillStyle = "rgba(0,0,0,.55)";
-  ctx.fillRect(0, h - pad - 6, w, pad + 6);
+  ctx.fillRect(0, ch2 - pad - 6, cw2, pad + 6);
   ctx.fillStyle = "#fff";
   ctx.font = `${Math.round(pad * 0.75)}px system-ui, sans-serif`;
-  ctx.fillText(`${camName}  ${new Date().toLocaleString()}`, 6, h - 8);
+  ctx.fillText(`${camName}  ${new Date().toLocaleString()}`, 6, ch2 - 8);
   return canvas;
 }
 
@@ -819,6 +897,9 @@ async function handle(m) {
         if (running && !recorder) startRecorder();
       }
       pushState();
+      break;
+    case "rotate":
+      setRotation(m.value);
       break;
     case "noise_filter":
       noiseFilter = !!m.on;
@@ -930,6 +1011,7 @@ function pushState() {
     has_audio: true,
     has_speaker: true,
     noise_filter: noiseFilter,
+    rotate: rotate,
     ptz: false
   });
   paintStats();
@@ -977,7 +1059,7 @@ function ago(ms) {
    ======================================================================= */
 async function start() {
   camName = document.getElementById("camName").value.trim() || "Camera";
-  camId = slug(camName) + "-" + Math.random().toString(36).slice(2, 6);
+  camId = slug(camName) + "-" + deviceTag();
   retentionHours = Number(document.getElementById("retention").value);
   maxBytes = Number(document.getElementById("maxmb").value) * 1024 * 1024;
   babyMode = document.getElementById("place").value === "baby";
@@ -1084,6 +1166,23 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden && audioCtx && audioCtx.state === "suspended")
     audioCtx.resume();
 });
+
+/* A tag that stays the same on this phone.
+
+   It used to be four random characters picked afresh every time Start was
+   pressed, which meant every restart arrived at the server as a brand new
+   camera: the old card sat there dead, the history split in two, and nobody
+   could tell the difference between "my phone restarted" and "a second
+   phone". The tag is kept now, so a restart comes back as itself. */
+function deviceTag() {
+  let tag = null;
+  try { tag = localStorage.getItem("cabinwatch-device"); } catch (e) {}
+  if (!tag) {
+    tag = Math.random().toString(36).slice(2, 6);
+    try { localStorage.setItem("cabinwatch-device", tag); } catch (e) {}
+  }
+  return tag;
+}
 
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-")

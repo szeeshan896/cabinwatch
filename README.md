@@ -435,6 +435,35 @@ Android app. On the phone and in the browser it is the device's own voice-call
 noise cleaner, which also stops the speaker feeding back while you talk. Turn
 it off if you would rather hear the room exactly as it is.
 
+### If the camera is not the right way up
+
+A phone hung over a cot, or propped on its side against a wall, sends a
+sideways picture. **Rotate** on that camera's card turns it a quarter turn at
+a time. The turn happens on the device and before anything else sees the
+frame, so the recordings and the movement detection come out straight too —
+not just the live view.
+
+A phone standing on edge works it out by itself when it starts, from gravity.
+Lying flat there is nothing to read, so it leaves the picture alone; and once
+you set it by hand, your choice wins and is never overruled.
+
+One thing it cannot do: a clip saved by the **browser** page keeps the
+camera's own orientation, because the browser records the camera stream
+directly rather than the turned picture. The Android app and the laptop agent
+turn their recordings too.
+
+### Two devices with the same name
+
+Each camera needs its own name. If a second device connects under a name that
+is already in use by a device that is still running, it is turned away and you
+get an alert saying so — rather than the two of them taking turns throwing
+each other off the server all night, with both their pictures arriving under
+one name.
+
+A camera that simply stops stays on the dashboard, greyed out, with the time
+it was last heard from, so "when did it go?" has an answer. **Remove** takes
+it off the list once you are done with it.
+
 ### What each alert means
 
 | Alert | What set it off |

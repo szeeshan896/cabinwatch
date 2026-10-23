@@ -33,6 +33,7 @@ import android.os.PowerManager
 import android.util.Base64
 import android.util.Log
 import android.util.Size
+import android.view.Surface
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -344,6 +345,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             )
             .build()
         val vc = VideoCapture.withOutput(recorder)
+        vc.targetRotation = targetRotationFor(settings.rotate)
 
         try {
             p.unbindAll()
@@ -424,7 +426,7 @@ class CameraService : LifecycleService(), WsClient.Events {
                         "motion",
                         if (settings.babyMode) "Your baby moved."
                         else "Movement in view of this camera.",
-                        bitmap, proxy.imageInfo.rotationDegrees
+                        bitmap, uprightDegrees(proxy.imageInfo.rotationDegrees)
                     )
                 }
                 motionOn = moved
@@ -436,7 +438,7 @@ class CameraService : LifecycleService(), WsClient.Events {
                 // Do not pile frames up behind a slow link.
                 if ((ws?.queuedBytes() ?: 0L) < 1_500_000L) {
                     val jpeg = encodeJpeg(
-                        bitmap, proxy.imageInfo.rotationDegrees,
+                        bitmap, uprightDegrees(proxy.imageInfo.rotationDegrees),
                         streamWidth, streamQuality, stamp = true
                     )
                     if (jpeg != null) ws?.sendBinary(Protocol.packVideo(jpeg))
@@ -450,6 +452,23 @@ class CameraService : LifecycleService(), WsClient.Events {
     }
 
     /** Rotate, scale, burn in the name and time, and compress. */
+    /**
+     * The camera's own sensor rotation, plus however the phone is mounted.
+     */
+    private fun uprightDegrees(sensor: Int) = (sensor + settings.rotate) % 360
+
+    /**
+     * CameraX is told where the top of the recording should end up, which is
+     * the opposite way round from how far we want the picture turned: asking
+     * for a target rotation of 270 turns the picture itself by 90.
+     */
+    private fun targetRotationFor(turn: Int) = when (((turn % 360) + 360) % 360) {
+        90 -> Surface.ROTATION_270
+        180 -> Surface.ROTATION_180
+        270 -> Surface.ROTATION_90
+        else -> Surface.ROTATION_0
+    }
+
     private fun encodeJpeg(
         src: Bitmap, rotation: Int, width: Int, quality: Int, stamp: Boolean
     ): ByteArray? {
@@ -925,6 +944,20 @@ class CameraService : LifecycleService(), WsClient.Events {
             }
             // The filter is chosen when the microphone is opened, so it has
             // to be reopened for the change to take effect.
+            // Only whole quarter turns, and only on a new segment - the
+            // one being written keeps the shape it started with.
+            "rotate" -> {
+                settings.rotate = msg.optInt("value", 0)
+                handler.post {
+                    videoCapture?.targetRotation = targetRotationFor(settings.rotate)
+                    motion.reset()
+                    if (activeRecording != null) {
+                        stopSegment()
+                        if (canRecord) startSegment()
+                    }
+                    pushState()
+                }
+            }
             "noise_filter" -> {
                 settings.noiseFilter = msg.optBoolean("on")
                 stopMic()
@@ -1052,6 +1085,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("audio_level", Math.round(sound.level * 1000.0) / 1000.0)
             put("baby_mode", settings.babyMode)
             put("noise_filter", settings.noiseFilter)
+            put("rotate", settings.rotate)
             put("armed", settings.armed)
             put("clips", clips.count())
             put("disk_free_gb", clips.freeGb())

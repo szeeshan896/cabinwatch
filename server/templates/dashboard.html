@@ -40,7 +40,14 @@
     overflow: hidden; display: flex; flex-direction: column;
   }
   .cam.alert { border-color: #d29922; }
-  .cam.offline { opacity: .55; }
+  .cam.offline { opacity: .7; }
+  .cam.offline .screen { background: #0d1117; }
+  .gone { color: #d29922; }
+  .gonebox { position: absolute; inset: 0; display: flex;
+             flex-direction: column; align-items: center;
+             justify-content: center; text-align: center;
+             color: #8b949e; font-size: 13px; }
+  .gonebox small { color: #6e7681; }
 
   .cam .top {
     display: flex; align-items: center; gap: 8px; padding: 9px 12px;
@@ -248,17 +255,27 @@ const KIND_LABEL = {
   motion: "Movement", sound: "Sound", cry: "Baby awake",
   impact: "Thud / fall", person: "Person seen", offline: "Camera offline",
   online: "Camera online", disk: "Storage low", test: "Test alert",
-  moved: "Camera was moved", battery_low: "Battery low"
+  moved: "Camera was moved", battery_low: "Battery low",
+  conflict: "Two devices, one name"
 };
 
 /* ---------- status socket ---------- */
+// This device's clock, not the server's. The server is in a datacentre
+// somewhere and its idea of the time is not yours.
+function startClock() {
+  const tick = () => {
+    document.getElementById("clock").textContent = clockStamp();
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
 function connectDash() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws/dash`);
   ws.onmessage = (e) => {
     const s = JSON.parse(e.data);
     cams = s.cameras; events = s.events;
-    document.getElementById("clock").textContent = s.server_time;
     renderBanner(s);
     render();
   };
@@ -600,6 +617,8 @@ function buildCard(c) {
     <div class="screen">
       <div class="idle">Tap <b>Snap</b> or <b>Live</b> to look<br>
         <small>nothing is sent while this is off</small></div>
+      <div class="gonebox" style="display:none">This camera is not
+        reporting<br><small>power, internet, or the app was closed</small></div>
       <img id="img-${c.id}" alt="" style="display:none">
       <div class="pill"></div>
       <div class="pad" style="display:none">
@@ -628,6 +647,8 @@ function buildCard(c) {
         <button data-act="arm">Alerts</button>
         <button data-act="clips">Clips</button>
         <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
+        <button data-act="rotate" title="Turn the picture a quarter turn - for a camera that is not mounted the right way up">Rotate</button>
+        <button data-act="forget" class="ghost" style="display:none">Remove</button>
       </div>
       <div class="inline lensrow" style="display:none">
         <label>Lens</label><select data-act="lens"></select>
@@ -675,6 +696,19 @@ function buildCard(c) {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id);
   };
+  act("rotate").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    const next = ((Number(c2.rotate) || 0) + 90) % 360;
+    setPending(id, "rotate", next);
+    cmd(id, "rotate", { value: next });
+  };
+  act("forget").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    if (!confirm(`Remove "${c2.name || id}" from this list?\n\n`
+                 + `Nothing recorded on the device is touched. If it `
+                 + `connects again it comes straight back.`)) return;
+    fetch("/camera/" + encodeURIComponent(id) + "/forget", { method: "POST" });
+  };
   act("noise").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     cmd(id, "noise", { on: !c2.noise_filter });
@@ -700,12 +734,22 @@ function updateCard(el, c) {
   q(".dot").className = "dot " + (c.online ? "on" : "off");
   setText(q(".nm"), c.name);
 
-  const quiet = (c.quiet_for_s == null) ? "no movement data"
-    : (c.motion ? '<b class="moving">moving now</b>'
-               : `still for <b>${dur(c.quiet_for_s)}</b>`);
-  const silent = (c.silent_for_s == null) ? ""
-    : `<br>quiet for ${dur(c.silent_for_s)}`;
-  setHtml(q(".still"), quiet + silent);
+  // A camera that has stopped has exactly one thing worth saying, and it
+  // is the question you actually have: when did it stop?
+  if (!c.online) {
+    const seen = c.last_seen
+      ? `stopped <b class="gone">${dur(c.offline_for_s)} ago</b>`
+        + `<br><small>${esc(clockTime(c.last_seen))}</small>`
+      : "not reporting";
+    setHtml(q(".still"), seen);
+  } else {
+    const quiet = (c.quiet_for_s == null) ? "no movement data"
+      : (c.motion ? '<b class="moving">moving now</b>'
+                 : `still for <b>${dur(c.quiet_for_s)}</b>`);
+    const silent = (c.silent_for_s == null) ? ""
+      : `<br>quiet for ${dur(c.silent_for_s)}`;
+    setHtml(q(".still"), quiet + silent);
+  }
 
   const tags = [];
   if (c.paused)    tags.push('<span class="tag pause">PAUSED</span>');
@@ -716,9 +760,22 @@ function updateCard(el, c) {
   if (!c.armed)    tags.push('<span class="tag">ALERTS OFF</span>');
   setHtml(q(".pill"), tags.join(""));
 
+  // Nothing on a camera that is not there can be pressed, and the buttons
+  // should look it rather than failing silently when tapped.
+  el.querySelectorAll("button, select, input").forEach(b => {
+    if (b.dataset.act === "forget") return;
+    b.disabled = !c.online;
+  });
+  const forget = q('[data-act="forget"]');
+  forget.style.display = c.online ? "none" : "";
+
   // The picture element itself is never replaced, only shown or hidden.
   const img = q("img"), idle = q(".idle");
-  if (mode === "off") {
+  const gonebox = q(".gonebox");
+  gonebox.style.display = c.online ? "none" : "flex";
+  if (!c.online) {
+    img.style.display = "none"; idle.style.display = "none";
+  } else if (mode === "off") {
     img.style.display = "none"; idle.style.display = "";
   } else {
     idle.style.display = "none";
@@ -760,6 +817,13 @@ function updateCard(el, c) {
   const noise = q('[data-act="noise"]');
   noise.classList.toggle("active", !!c.noise_filter);
   noise.disabled = !c.has_audio;
+
+  // Say which way it is turned, so a camera left sideways is obvious
+  // without having to work it out from the picture.
+  const turn = Number(heldValue(c.id, "rotate", c.rotate)) || 0;
+  const rot = q('[data-act="rotate"]');
+  setText(rot, turn ? `Rotate ${turn}\u00B0` : "Rotate");
+  rot.classList.toggle("active", turn !== 0);
 
   // A dropdown is only rebuilt when its choices actually change, and never
   // while it is open - otherwise it shuts the moment you reach for it.
@@ -866,13 +930,38 @@ function renderEvents() {
         <div class="k">${esc(KIND_LABEL[e.kind] || e.kind)}</div>
         <div class="d">${esc(e.camera_name)}${e.detail ? " - " + esc(e.detail) : ""}</div>
       </div>
-      <div class="t">${esc(e.when)}</div>
+      <div class="t">${esc(clockTime(e.at))}</div>
     </div>`).join("");
 }
 
 function batteryIcon(pct, charging) {
   if (charging) return "\u26A1";
   return pct < 15 ? "\u{1FAAB}" : "\u{1F50B}";
+}
+
+/* Times are sent as the moment they happened, and written here against
+   this device's own clock - the server's timezone is nobody's business and
+   on Railway it is UTC, which is five and a half hours out in India. */
+function clockTime(at) {
+  if (!at) return "";
+  const d = new Date(at * 1000);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+  if (sameDay) return time;
+  return d.toLocaleDateString([], { day: "numeric", month: "short" })
+    + ", " + time;
+}
+
+function clockStamp(at) {
+  const d = at ? new Date(at * 1000) : new Date();
+  return d.toLocaleDateString([], {
+    day: "numeric", month: "short", year: "numeric"
+  }) + " " + d.toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
 }
 
 function dur(s) {
@@ -900,6 +989,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+startClock();
 connectDash();
 </script>
 </body>

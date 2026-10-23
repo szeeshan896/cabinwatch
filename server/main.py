@@ -44,6 +44,7 @@ SIMPLE_COMMANDS = {
     "noise":   "noise_filter",  # {"on": bool} - drop steady fan noise
     "lens":    "lens",          # {"id": "<device id>"} - switch front/back
     "zoom":    "zoom",          # {"value": 1.0 .. 4.0} - digital zoom
+    "rotate":  "rotate",        # {"value": 0|90|180|270} - stand the view up
     "ptz":     "ptz",           # {"action": "left"|"right"|"up"|"down"|
                                 #  "stop"|"preset"|"save_preset"|"home",
                                 #  "speed": 0..1, "preset": "<name>"}
@@ -249,6 +250,23 @@ async def get_clip(cam_id: str, filename: str, request: Request):
                              headers=headers)
 
 
+@app.post("/camera/{cam_id}/forget")
+async def forget_camera(cam_id: str, request: Request):
+    """Drop a camera that has stopped reporting off the dashboard.
+
+    Only one that is actually gone - a connected camera is removed by
+    turning it off, not from here.
+    """
+    require_login(request)
+    if hub.get(cam_id) is not None:
+        raise HTTPException(status_code=409,
+                            detail="that camera is still connected")
+    if not hub.forget(cam_id):
+        raise HTTPException(status_code=404, detail="no such camera")
+    await hub.broadcast_state()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Commands to a camera
 # ---------------------------------------------------------------------------
@@ -310,7 +328,8 @@ async def ws_camera(ws: WebSocket):
 
     await ws.accept()
     cam = Camera(cam_id, name or cam_id, ws, kind=kind)
-    await hub.register(cam)
+    if not await hub.register(cam):
+        return          # the name is in use by a device that is still here
     print(f"[camera] {cam_id} connected ({kind})")
 
     try:

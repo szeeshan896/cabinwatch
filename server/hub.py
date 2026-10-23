@@ -33,7 +33,7 @@ STATE_FIELDS = (
     "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
     "quiet_for_s", "silent_for_s", "moved_ago_s", "battery", "charging",
     "location", "noise_filter", "ptz",
-    "ptz_presets", "lenses", "active_lens", "zoom", "has_audio",
+    "ptz_presets", "lenses", "active_lens", "zoom", "rotate", "has_audio",
     "has_speaker",
 )
 
@@ -89,6 +89,7 @@ class Camera:
             "lenses": [],                # selectable cameras on the device
             "active_lens": None,
             "zoom": 1.0,
+            "rotate": 0,                 # degrees to stand the picture up
             "has_audio": False,
             "has_speaker": False,
         }
@@ -305,12 +306,35 @@ class Hub:
         self.thumbs = {}
         self._event_seq = 0
         self._dash_clients = set()
+        self._conflicts = {}             # cam_id -> when we last complained
+
+        # Cameras that have been here and are not here now. Without this a
+        # camera that stops simply vanishes off the dashboard, and the one
+        # question you actually have - when did it stop? - has nowhere to be
+        # answered. Kept in memory, so a server restart clears it.
+        self.offline = {}                # cam_id -> last known description
 
     # -- cameras -------------------------------------------------------------
+    # A camera that is still talking to us has not gone anywhere. Every client
+    # pushes its state every couple of seconds, so anything quieter than this
+    # is a socket the other end has already walked away from.
+    STILL_THERE = 10.0
+
     async def register(self, camera: Camera):
+        """Take a camera on. False means it was refused - see below."""
         old = self.cameras.get(camera.cam_id)
+
         if old is not None and old is not camera:
-            # A camera reconnecting (restart, new IP, phone woke up). Drop the
+            if time.time() - old.last_seen < self.STILL_THERE:
+                # Not a reconnection: the one already here is alive and
+                # talking. This is a second device set up under the same
+                # name, and letting it in starts a fight nobody can see -
+                # each one knocks the other off, over and over, and their
+                # pictures and alerts land under one name on the dashboard.
+                await self._refuse(camera, old)
+                return False
+
+            # A camera coming back (restart, new IP, phone woke up). Drop the
             # stale socket but hand its viewers to the fresh connection so the
             # dashboard does not go blank.
             camera.viewers = old.viewers
@@ -319,7 +343,9 @@ class Hub:
                 await old.ws.close()
             except Exception:
                 pass
+
         self.cameras[camera.cam_id] = camera
+        self.forget_offline(camera.cam_id)
         await camera.apply_stream_mode()
 
         if old is None:
@@ -328,10 +354,34 @@ class Hub:
             await notifier.send(camera.cam_id, camera.name, "online",
                                 f"{camera.name} is connected and watching.")
         await self.broadcast_state()
+        return True
+
+    async def _refuse(self, newcomer: Camera, holder: Camera):
+        """Turn away a second device using a name that is already taken."""
+        detail = (f"Two devices are both set up as \"{holder.name}\". The "
+                  f"second one was refused so this one keeps working - give "
+                  f"it a different name and it will connect.")
+        print(f"[camera] refused {newcomer.cam_id}: name already in use by a "
+              f"device that is still connected")
+        try:
+            await newcomer.ws.close(code=4409, reason="name already in use")
+        except Exception:
+            pass
+
+        # Say it once in a while, not on every retry - the refused device
+        # will keep knocking until somebody renames it.
+        now = time.time()
+        if now - self._conflicts.get(holder.cam_id, 0) < 300:
+            return
+        self._conflicts[holder.cam_id] = now
+        self.add_event(holder.cam_id, holder.name, "conflict", detail)
+        await notifier.send(holder.cam_id, holder.name, "conflict", detail)
+        await self.broadcast_state()
 
     async def unregister(self, camera: Camera):
         if self.cameras.get(camera.cam_id) is camera:
             del self.cameras[camera.cam_id]
+            self.remember_offline(camera)
             for xfer_id in list(camera.transfers):
                 await camera.end_transfer(xfer_id, error="camera disconnected")
             self.add_event(camera.cam_id, camera.name, "offline",
@@ -346,13 +396,45 @@ class Hub:
     def get(self, cam_id):
         return self.cameras.get(cam_id)
 
+    # -- cameras that are not here any more -----------------------------------
+    def remember_offline(self, camera: Camera):
+        """Keep a camera on the dashboard after it stops reporting."""
+        last = camera.describe()
+        last.update({
+            "online": False,
+            "status": "offline",
+            "streaming": None,
+            "listening": False,
+            "viewers": 0,
+            "recording": False,
+            "motion": False,
+            "sound": False,
+            "audio_level": 0.0,
+            "last_seen": camera.last_seen,
+        })
+        self.offline[camera.cam_id] = last
+
+    def forget_offline(self, cam_id):
+        self.offline.pop(cam_id, None)
+
+    def forget(self, cam_id):
+        """Drop a camera from the dashboard for good, at the viewer's say-so."""
+        return self.offline.pop(cam_id, None) is not None
+
     def list_state(self):
         cams = [c.describe() for c in self.cameras.values()]
+        now = time.time()
+        for cam_id, last in self.offline.items():
+            if cam_id in self.cameras:
+                continue
+            gone = dict(last)
+            gone["offline_for_s"] = int(now - (last.get("last_seen") or now))
+            cams.append(gone)
         cams.sort(key=lambda c: c["name"].lower())
         return {
             "cameras": cams,
             "events": list(self.events)[-80:][::-1],
-            "server_time": datetime.datetime.now().strftime("%d %b %Y  %H:%M:%S"),
+            "server_time": time.time(),
             "notifications": bool(settings.NTFY_TOPIC),
         }
 
@@ -386,8 +468,11 @@ class Hub:
             "camera_name": cam_name,
             "kind": kind,
             "detail": detail,
+            # Only the moment it happened goes out. The server runs in
+            # whatever timezone its host feels like - UTC on Railway - and
+            # showing that to someone in another one is just a wrong clock.
+            # Whoever is looking formats it against their own.
             "at": time.time(),
-            "when": datetime.datetime.now().strftime("%d %b, %H:%M:%S"),
             "thumb": f"/event/{eid}/thumb.jpg" if thumb else None,
         }
         if extra:

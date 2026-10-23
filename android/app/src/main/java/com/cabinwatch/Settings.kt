@@ -86,6 +86,17 @@ class Settings(context: Context) {
         get() = sp.getBoolean(K_NOISE, true)
         set(v) = sp.edit().putBoolean(K_NOISE, v).apply()
 
+    /**
+     * Quarter turns needed to stand the picture up: 0, 90, 180 or 270.
+     *
+     * A phone is not always mounted the way the camera assumes - hung
+     * upside down over a cot, propped on its side against a wall - and a
+     * sideways view of your child is no use to anybody.
+     */
+    var rotate: Int
+        get() = sp.getInt(K_ROTATE, 0)
+        set(v) = sp.edit().putInt(K_ROTATE, ((v % 360) + 360) % 360).apply()
+
     var soundSensitivity: Float
         get() = sp.getFloat(K_SENS, 1.0f)
         set(v) = sp.edit().putFloat(K_SENS, v).apply()
@@ -118,6 +129,7 @@ class Settings(context: Context) {
         private const val K_MAXMB = "max_storage_mb"
         private const val K_RECAUDIO = "record_audio"
         private const val K_NOISE = "noise_filter"
+        private const val K_ROTATE = "rotate"
         private const val K_SENS = "sound_sensitivity"
         private const val K_MOTION = "motion_sensitivity"
         private const val K_BOOT = "start_on_boot"
