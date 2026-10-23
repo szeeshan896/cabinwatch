@@ -215,6 +215,23 @@ jobs:
 
           Neither file contains your server address or your token. You type
           those in once per device and they stay on that device.
+
+          ### In these builds
+
+          - **Fan filter** - cuts a fan or cooler so a baby can be heard over
+            it, and so the crying alert fires at all
+          - **Rotate** - for a phone hung upside down or propped on its side;
+            the recordings come out straight too
+          - **People only** - the cabin camera stops alerting about curtains
+          - **Siren** - the device screams, with its torch flashing
+          - **Unplugged alert** - the moment the charger comes out
+          - **Event clips copied to the server**, so footage survives the
+            camera being taken
+          - **Recordings survive a power cut** - the last second or two is
+            lost instead of the whole clip
+          - **Battery, location and "camera was moved"** on the dashboard
+          - **Comes back by itself** - the phone app checks on itself every
+            quarter of an hour; the laptop agent can start with Windows
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" out/* --clobber
