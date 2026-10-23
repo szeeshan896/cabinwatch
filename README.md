@@ -410,196 +410,15 @@ low resolution. **HD** is for when you need to recognise a face.
 The line at the top right of each card is the quickest read you have:
 *still for 23 min* means nobody has moved in that room for 23 minutes.
 
-**Listen** opens the camera's microphone. **Talk** sends your voice out of the
-camera's speaker. **Baby** turns sound alerts on for that camera. **Alerts**
-disarms it when you are in the room yourself. **Clips** lists everything the
-device has recorded, to play or to save.
+**Listen** opens the camera's microphone and **Talk** sends your voice out of
+its speaker. **Baby** turns sound alerts on for that camera, **Alerts** disarms
+it when you are in the room yourself, and **Pause rec** stops it recording for
+a while. **Clips** is everything the device has recorded.
 
-### The fan filter
-
-A ceiling fan or a cooler in the room is the one thing that defeats a baby
-monitor. It is loud, it never stops, and it sits right on top of the sound you
-are listening for — so you hear a motor instead of the child, and the alert
-never fires because the room's noise level is already high.
-
-**Fan filter** on a camera's card deals with that. A fan is *steady*: it holds
-the same frequencies minute after minute, while a voice moves around and comes
-and goes. So the steady part is measured and taken out, and what is left is
-whatever is not the fan. On the measurements in `tests/test_noise_filter.py`,
-a cry that sat 9 dB *under* a cooler comes out 11 dB *over* it, and the cooler
-itself drops by around 11 dB. A cooler that is switched on later gets learned
-within about three seconds.
-
-It is on by default everywhere — the laptop agent, the browser page and the
-Android app. On the phone and in the browser it is the device's own voice-call
-noise cleaner, which also stops the speaker feeding back while you talk. Turn
-it off if you would rather hear the room exactly as it is.
-
-### If the camera is not the right way up
-
-A phone hung over a cot, or propped on its side against a wall, sends a
-sideways picture. **Rotate** on that camera's card turns it a quarter turn at
-a time. The turn happens on the device and before anything else sees the
-frame, so the recordings and the movement detection come out straight too —
-not just the live view.
-
-A phone standing on edge works it out by itself when it starts, from gravity.
-Lying flat there is nothing to read, so it leaves the picture alone; and once
-you set it by hand, your choice wins and is never overruled.
-
-One thing it cannot do: a clip saved by the **browser** page keeps the
-camera's own orientation, because the browser records the camera stream
-directly rather than the turned picture. The Android app and the laptop agent
-turn their recordings too.
-
-### Making a laptop camera come back by itself
-
-A camera that only runs while somebody has a window open is not a camera. It
-lasts until the first Windows update, the first power cut, or the first time
-somebody tidies the desktop.
-
-On the settings page there is now a **Start by itself** choice, or from a
-terminal:
-
-```bash
-python agent/agent.py --start-with-windows     # and --no-start-with-windows
-```
-
-On Windows that is an entry under your own user's Run key — no administrator
-rights, no installer, and nothing left behind when you turn it off. On Linux
-it is a systemd user service, for a Raspberry Pi left plugged in as the bridge
-to an IP camera.
-
-**The part that catches people:** this starts when you *log in*, not when the
-machine powers up. A laptop sitting at the login screen after a power cut is
-not watching anything. If it is a machine kept for this, turn on automatic
-sign-in (`netplwiz` on Windows) so a restart takes it all the way back. On a
-Pi, `sudo loginctl enable-linger $USER` does the same job.
-
-### Hours — so you stop being alerted about yourself
-
-A camera you have to arm and disarm by hand ends up disarmed. You turn it off
-because it keeps alerting about you, and nobody remembers to turn it back on
-in the evening.
-
-**Hours** on a camera's card asks the question you can actually answer: when
-are you normally there? Pick the times and the days, and it leaves you alone
-during them and watches the rest of the time by itself. It keeps pushing that
-at the camera rather than setting it once, so a camera that was off all night
-comes back to the right state instead of whatever it had when it died.
-
-**Set `TIMEZONE` for this to make sense.** The server runs wherever it is
-hosted, and on Railway that is UTC — so without it, hours set for ten at night
-start at half past three in the morning in India. Put your IANA zone in
-Railway's variables, for example `TIMEZONE=Asia/Kolkata`. Quiet hours use it
-too, and had exactly the same problem until now.
-
-### The siren
-
-**Siren** on a camera's card makes that device scream — a two-tone wail
-through its own speaker, with the torch flashing where the phone has one. It
-is a deterrent, and it is also how you find out whether anybody is actually
-there. It stops by itself after two minutes, because a siren nobody turns off
-flattens the battery and takes the camera with it.
-
-### When a camera is unplugged
-
-Pulling the charger is the first thing anybody does to a phone they are
-taking, and it happens long before the battery is low enough for the usual
-warning — which would reach you hours later, from a phone that is no longer
-in the building. So losing power is its own alert, and it gets through quiet
-hours.
-
-It waits a few seconds before believing it: phones misreport for a moment,
-and being woken at three in the morning by a loose cable is worse than being
-told three seconds later. A laptop on mains has no battery to report, so it
-never raises this at all.
-
-### If the camera itself is what gets stolen
-
-Recordings live on the device that made them. For the baby that is exactly
-right — nothing is sent anywhere until you ask for it. For the cabin it has a
-hole straight through the middle of it: the thing being recorded is somebody
-taking the device, and when they take it the recording goes too.
-
-So when a camera finishes a clip that a **person**, a **thud**, the camera
-**being moved**, or **crying** was raised during, it tells the server, and the
-server pulls a copy and keeps it. The alert in Recent Activity then carries a
-**saved clip** link that still works after the camera is gone.
-
-Ordinary movement is deliberately not on that list — on a camera watching a
-room somebody lives in it would fill the store within the hour and push out
-the clip that mattered. Change it with `EVIDENCE_KINDS` if you want to.
-
-The store is small on purpose: 800 MB and 14 days by default
-(`EVIDENCE_MAX_MB`, `EVIDENCE_DAYS`), oldest dropped first. And be clear about
-what it is not: **on Railway the disk is wiped by every redeploy.** This
-survives the camera going missing, not everything. Download anything that
-matters.
-
-### If the power goes out
-
-An mp4 only becomes playable when it is closed properly — the index saying
-where every frame is gets written at the very end. So a camera that loses
-power mid-clip used to lose the whole segment, not the last part of it:
-"moov atom not found", and up to five minutes of exactly the footage you
-would want after an incident.
-
-Segments are written as Matroska now, which writes as it goes, and are
-repackaged into mp4 when they close — or on the next start, if there was no
-chance to close them. Measured in `tests/test_power_cut.py`, pulling the plug
-now costs the last second or two instead of everything.
-
-### When a camera stops, and what brings it back
-
-A camera that stops stays on the dashboard, greyed out, with the time it was
-last heard from — and the card says what will bring that particular kind of
-camera back, so nobody sits looking at a grey tile wondering whether to drive
-over there.
-
-- **The Android app** checks on itself every quarter of an hour and starts
-  again if something ended it — swiped off the recents list, stopped by a
-  battery optimiser, killed by a manufacturer's "cleaner". It also comes back
-  after a reboot. Stopping it from the app's own button keeps it stopped.
-- **The laptop agent** comes back if you turned on **Start by itself**.
-- **A browser camera** stops when the page is closed or the phone sleeps, and
-  has to be opened again on that phone. That is the browser's rule, not ours —
-  it is why the app exists.
-
-**What cannot be done:** starting a fully stopped app from the dashboard.
-Nothing can reach an app that is not running. Android allows exactly one
-exception — a Firebase Cloud Messaging push — and that needs a Firebase
-project set up under your own Google account, with its key added to the app.
-It is free, and it is the only route; if you want it, it is a small change
-once the project exists.
-
-### Two devices with the same name
-
-Each camera needs its own name. If a second device connects under a name that
-is already in use by a device that is still running, it is turned away and you
-get an alert saying so — rather than the two of them taking turns throwing
-each other off the server all night, with both their pictures arriving under
-one name.
-
-A camera that simply stops stays on the dashboard, greyed out, with the time
-it was last heard from, so "when did it go?" has an answer. **Remove** takes
-it off the list once you are done with it.
-
-### Only waking you for a person
-
-Movement on its own is a poor burglar alarm. A curtain over an open window, a
-ceiling fan, headlights crossing a wall — they all move, and after a few
-nights of being woken by them you stop trusting the phone. That is worse than
-no alarm, because now the real one gets ignored too.
-
-**People only** on a cabin camera makes an alert wait until somebody is
-actually in the frame. The phone decides that itself, with its own labeller,
-and the picture never leaves it to get the answer. It is only asked after
-something has already moved, so an empty room at night costs nothing.
-
-It does not appear on a baby camera, where any movement is the point. And if
-a phone cannot answer — an old one without the parts — it raises the alert
-anyway rather than swallowing it.
+The rest depend on the camera and what it is watching, and each has its own
+section below: **Fan filter**, **Rotate**, **People only** (cabin cameras),
+**Hours**, and **Siren**. A camera that has stopped reporting keeps its card,
+greyed out, with **Remove** to take it off the list for good.
 
 ### Finding a recording
 
@@ -663,6 +482,192 @@ left that would make a large difference — and it is a rewrite of the whole
 video path, so it is written down here rather than done quietly.
 
 ---
+
+### The fan filter
+
+A ceiling fan or a cooler in the room is the one thing that defeats a baby
+monitor. It is loud, it never stops, and it sits right on top of the sound you
+are listening for — so you hear a motor instead of the child, and the alert
+never fires because the room's noise level is already high.
+
+**Fan filter** on a camera's card deals with that. A fan is *steady*: it holds
+the same frequencies minute after minute, while a voice moves around and comes
+and goes. So the steady part is measured and taken out, and what is left is
+whatever is not the fan. On the measurements in `tests/test_noise_filter.py`,
+a cry that sat 9 dB *under* a cooler comes out 11 dB *over* it, and the cooler
+itself drops by around 11 dB. A cooler that is switched on later gets learned
+within about three seconds.
+
+It is on by default everywhere — the laptop agent, the browser page and the
+Android app. On the phone and in the browser it is the device's own voice-call
+noise cleaner, which also stops the speaker feeding back while you talk. Turn
+it off if you would rather hear the room exactly as it is.
+
+### Only waking you for a person
+
+Movement on its own is a poor burglar alarm. A curtain over an open window, a
+ceiling fan, headlights crossing a wall — they all move, and after a few
+nights of being woken by them you stop trusting the phone. That is worse than
+no alarm, because now the real one gets ignored too.
+
+**People only** on a cabin camera makes an alert wait until somebody is
+actually in the frame. The phone decides that itself, with its own labeller,
+and the picture never leaves it to get the answer. It is only asked after
+something has already moved, so an empty room at night costs nothing.
+
+It does not appear on a baby camera, where any movement is the point. And if
+a phone cannot answer — an old one without the parts — it raises the alert
+anyway rather than swallowing it.
+
+### Hours — so you stop being alerted about yourself
+
+A camera you have to arm and disarm by hand ends up disarmed. You turn it off
+because it keeps alerting about you, and nobody remembers to turn it back on
+in the evening.
+
+**Hours** on a camera's card asks the question you can actually answer: when
+are you normally there? Pick the times and the days, and it leaves you alone
+during them and watches the rest of the time by itself. It keeps pushing that
+at the camera rather than setting it once, so a camera that was off all night
+comes back to the right state instead of whatever it had when it died.
+
+**Set `TIMEZONE` for this to make sense.** The server runs wherever it is
+hosted, and on Railway that is UTC — so without it, hours set for ten at night
+start at half past three in the morning in India. Put your IANA zone in
+Railway's variables, for example `TIMEZONE=Asia/Kolkata`. Quiet hours use it
+too, and had exactly the same problem until now.
+
+### The siren
+
+**Siren** on a camera's card makes that device scream — a two-tone wail
+through its own speaker, with the torch flashing where the phone has one. It
+is a deterrent, and it is also how you find out whether anybody is actually
+there. It stops by itself after two minutes, because a siren nobody turns off
+flattens the battery and takes the camera with it.
+
+### If the camera is not the right way up
+
+A phone hung over a cot, or propped on its side against a wall, sends a
+sideways picture. **Rotate** on that camera's card turns it a quarter turn at
+a time. The turn happens on the device and before anything else sees the
+frame, so the recordings and the movement detection come out straight too —
+not just the live view.
+
+A phone standing on edge works it out by itself when it starts, from gravity.
+Lying flat there is nothing to read, so it leaves the picture alone; and once
+you set it by hand, your choice wins and is never overruled.
+
+One thing it cannot do: a clip saved by the **browser** page keeps the
+camera's own orientation, because the browser records the camera stream
+directly rather than the turned picture. The Android app and the laptop agent
+turn their recordings too.
+
+### Making a laptop camera come back by itself
+
+A camera that only runs while somebody has a window open is not a camera. It
+lasts until the first Windows update, the first power cut, or the first time
+somebody tidies the desktop.
+
+On the settings page there is now a **Start by itself** choice, or from a
+terminal:
+
+```bash
+python agent/agent.py --start-with-windows     # and --no-start-with-windows
+```
+
+On Windows that is an entry under your own user's Run key — no administrator
+rights, no installer, and nothing left behind when you turn it off. On Linux
+it is a systemd user service, for a Raspberry Pi left plugged in as the bridge
+to an IP camera.
+
+**The part that catches people:** this starts when you *log in*, not when the
+machine powers up. A laptop sitting at the login screen after a power cut is
+not watching anything. If it is a machine kept for this, turn on automatic
+sign-in (`netplwiz` on Windows) so a restart takes it all the way back. On a
+Pi, `sudo loginctl enable-linger $USER` does the same job.
+
+### Two devices with the same name
+
+Each camera needs its own name. If a second device connects under a name that
+is already in use by a device that is still running, it is turned away and you
+get an alert saying so — rather than the two of them taking turns throwing
+each other off the server all night, with both their pictures arriving under
+one name.
+
+A camera that simply stops stays on the dashboard, greyed out, with the time
+it was last heard from, so "when did it go?" has an answer. **Remove** takes
+it off the list once you are done with it.
+
+### When a camera is unplugged
+
+Pulling the charger is the first thing anybody does to a phone they are
+taking, and it happens long before the battery is low enough for the usual
+warning — which would reach you hours later, from a phone that is no longer
+in the building. So losing power is its own alert, and it gets through quiet
+hours.
+
+It waits a few seconds before believing it: phones misreport for a moment,
+and being woken at three in the morning by a loose cable is worse than being
+told three seconds later. A laptop on mains has no battery to report, so it
+never raises this at all.
+
+### When a camera stops, and what brings it back
+
+A camera that stops stays on the dashboard, greyed out, with the time it was
+last heard from — and the card says what will bring that particular kind of
+camera back, so nobody sits looking at a grey tile wondering whether to drive
+over there.
+
+- **The Android app** checks on itself every quarter of an hour and starts
+  again if something ended it — swiped off the recents list, stopped by a
+  battery optimiser, killed by a manufacturer's "cleaner". It also comes back
+  after a reboot. Stopping it from the app's own button keeps it stopped.
+- **The laptop agent** comes back if you turned on **Start by itself**.
+- **A browser camera** stops when the page is closed or the phone sleeps, and
+  has to be opened again on that phone. That is the browser's rule, not ours —
+  it is why the app exists.
+
+**What cannot be done:** starting a fully stopped app from the dashboard.
+Nothing can reach an app that is not running. Android allows exactly one
+exception — a Firebase Cloud Messaging push — and that needs a Firebase
+project set up under your own Google account, with its key added to the app.
+It is free, and it is the only route; if you want it, it is a small change
+once the project exists.
+
+### If the camera itself is what gets stolen
+
+Recordings live on the device that made them. For the baby that is exactly
+right — nothing is sent anywhere until you ask for it. For the cabin it has a
+hole straight through the middle of it: the thing being recorded is somebody
+taking the device, and when they take it the recording goes too.
+
+So when a camera finishes a clip that a **person**, a **thud**, the camera
+**being moved**, or **crying** was raised during, it tells the server, and the
+server pulls a copy and keeps it. The alert in Recent Activity then carries a
+**saved clip** link that still works after the camera is gone.
+
+Ordinary movement is deliberately not on that list — on a camera watching a
+room somebody lives in it would fill the store within the hour and push out
+the clip that mattered. Change it with `EVIDENCE_KINDS` if you want to.
+
+The store is small on purpose: 800 MB and 14 days by default
+(`EVIDENCE_MAX_MB`, `EVIDENCE_DAYS`), oldest dropped first. And be clear about
+what it is not: **on Railway the disk is wiped by every redeploy.** This
+survives the camera going missing, not everything. Download anything that
+matters.
+
+### If the power goes out
+
+An mp4 only becomes playable when it is closed properly — the index saying
+where every frame is gets written at the very end. So a camera that loses
+power mid-clip used to lose the whole segment, not the last part of it:
+"moov atom not found", and up to five minutes of exactly the footage you
+would want after an incident.
+
+Segments are written as Matroska now, which writes as it goes, and are
+repackaged into mp4 when they close — or on the next start, if there was no
+chance to close them. Measured in `tests/test_power_cut.py`, pulling the plug
+now costs the last second or two instead of everything.
 
 ## Privacy
 
