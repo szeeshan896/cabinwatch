@@ -1122,7 +1122,10 @@ class CameraSession:
         while not self._stop.is_set():
             if self.connected:
                 self.push_state()
-            self._stop.wait(2.0)
+            # Asleep there is nothing happening worth reporting every two
+            # seconds, and on a phone that heartbeat is most of what is
+            # left to save. Anything that actually changes is sent at once.
+            self._stop.wait(20.0 if self.asleep() else 2.0)
 
     # =====================================================================
     def start(self):

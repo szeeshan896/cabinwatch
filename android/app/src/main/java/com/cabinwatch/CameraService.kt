@@ -1286,7 +1286,13 @@ class CameraService : LifecycleService(), WsClient.Events {
             // Position changes slowly and costs battery to ask for, so it
             // is refreshed every few minutes rather than every tick.
             if (ticks++ % 150 == 0) refreshLocation()
-            handler.postDelayed(this, 2000)
+
+            // Asleep, there is nothing happening worth reporting twice a
+            // second, and waking the radio that often would undo most of
+            // what standby is for. The dashboard is told at once when
+            // anything actually changes, so a slow heartbeat is enough.
+            val gap = if (awake) 2_000L else 20_000L
+            handler.postDelayed(this, gap)
         }
     }
 

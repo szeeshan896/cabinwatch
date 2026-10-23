@@ -1279,8 +1279,17 @@ async function start() {
     analyseAudio();
   }, 350);
 
-  setInterval(() => { if (running) { pushState(); checkBattery(); } },
-              STATE_EVERY);
+  // Asleep, nothing is happening that is worth reporting every couple of
+  // seconds, and that heartbeat is most of what standby still costs.
+  // Anything that really changes is sent the moment it does.
+  let beats = 0;
+  setInterval(() => {
+    if (!running) return;
+    beats++;
+    if (!awake && beats % 10 !== 0) return;
+    pushState();
+    checkBattery();
+  }, STATE_EVERY);
   setInterval(() => { if (running) houseKeep(); }, 60000);
 }
 
