@@ -542,6 +542,27 @@ their own app first — on TP-Link Tapo you create a "Camera Account".
 
 ---
 
+## Checking it still works
+
+Everything in `tests/` is a plain program: it prints what it checked and
+exits non-zero if something is wrong. To run the lot:
+
+```bash
+python tests/run_all.py
+```
+
+Around two hundred checks, including ones that record real video, kill the
+process mid-clip to see what survives, and drive the dashboard in a real
+browser. The browser ones skip themselves if there is no browser to drive, so
+this works on a bare machine. A single file runs on its own too:
+
+```bash
+python tests/test_power_cut.py
+```
+
+GitHub Actions runs all of it on every push, and a release cannot be
+published unless it passes.
+
 ## Also in this repo
 
 `legacy/` holds the first version: a single-machine CCTV where every camera has

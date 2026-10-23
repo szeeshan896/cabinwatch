@@ -1,6 +1,6 @@
 name: Build apps
 
-# Builds the two things you install on a device:
+# Runs the checks, then builds the two things you install on a device:
 #   - the Android camera app  (APK)
 #   - the laptop camera agent (Windows .exe, no Python needed)
 #
@@ -11,14 +11,7 @@ name: Build apps
 
 on:
   push:
-    paths:
-      - 'android/**'
-      - 'agent/**'
-      - '.github/workflows/build.yml'
   pull_request:
-    paths:
-      - 'android/**'
-      - 'agent/**'
   workflow_dispatch:
     inputs:
       publish:
@@ -27,6 +20,37 @@ on:
         default: false
 
 jobs:
+  # -------------------------------------------------------------------------
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install what the checks need
+        run: |
+          python -m pip install --upgrade pip
+          # The camera side without sounddevice: a CI runner has no audio
+          # device, and the agent is written to carry on without one.
+          pip install "opencv-python>=4.9.0,<5.0" "numpy>=1.24.0" \
+                      "websocket-client>=1.7.0" "imageio-ffmpeg>=0.5.1"
+          pip install -r requirements.txt
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Run them
+        # Some of these drive a real browser and record real video, so give
+        # them room; a hung test should still not hold the runner all day.
+        timeout-minutes: 25
+        run: python tests/run_all.py
+
   # -------------------------------------------------------------------------
   apk:
     name: Android camera app
@@ -150,7 +174,7 @@ jobs:
     name: Publish download links
     # Only ever on a deliberate run with the box ticked.
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: [apk, exe]
+    needs: [checks, apk, exe]
     runs-on: ubuntu-latest
     permissions:
       contents: write
