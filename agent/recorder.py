@@ -99,10 +99,13 @@ class Recorder:
         except FileNotFoundError:
             return
 
+        leftovers = (".video.mkv", ".video.mp4", ".audio.wav")
         stamps = sorted({n.rsplit(".", 2)[0] for n in names
-                         if n.endswith((".video.mp4", ".audio.wav"))})
+                         if n.endswith(leftovers)})
         for ts in stamps:
-            video = os.path.join(self.tmp_dir, f"{ts}.video.mp4")
+            video = os.path.join(self.tmp_dir, f"{ts}.video.mkv")
+            if not os.path.isfile(video):
+                video = os.path.join(self.tmp_dir, f"{ts}.video.mp4")
             audio = os.path.join(self.tmp_dir, f"{ts}.audio.wav")
             final = os.path.join(self.dir, f"{ts}.mp4")
             if not os.path.isfile(video) or os.path.getsize(video) < 2048:
@@ -121,7 +124,7 @@ class Recorder:
 
         # Anything else in there is not part of a clip.
         for n in names:
-            if not n.endswith((".video.mp4", ".audio.wav")):
+            if not n.endswith(leftovers):
                 with contextlib.suppress(OSError):
                     os.remove(os.path.join(self.tmp_dir, n))
 
@@ -241,7 +244,15 @@ class Recorder:
         self._names.add(stamp)
 
         name = f"{stamp}.mp4"
-        video_tmp = os.path.join(self.tmp_dir, f"{stamp}.video.mp4")
+        # An mp4 only becomes playable when it is closed properly: the index
+        # is written last. Pull the plug mid-clip and the whole segment is
+        # gone - not shortened, gone, "moov atom not found". Matroska writes
+        # as it goes, so the same pull costs the last second instead, and
+        # ffmpeg repackages it into an mp4 when the segment ends. Without
+        # ffmpeg there is nothing to repackage with, so stay on mp4 rather
+        # than leave behind files nothing can open.
+        container = "mkv" if muxer.available() else "mp4"
+        video_tmp = os.path.join(self.tmp_dir, f"{stamp}.video.{container}")
         audio_tmp = os.path.join(self.tmp_dir, f"{stamp}.audio.wav")
 
         # mp4v is the codec OpenCV can always write without extra packages.

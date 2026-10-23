@@ -96,6 +96,26 @@ def _timestamp_scale(declared_fps, frames, seconds):
     return scale
 
 
+def _repackage(exe, video_path, out_path, scale):
+    """Put a video into an mp4 without re-encoding it."""
+    cmd = [exe, "-y", "-loglevel", "error", "-nostdin"]
+    if abs(scale - 1.0) > 0.01:
+        cmd += ["-itsscale", f"{scale:.6f}"]
+    cmd += ["-i", video_path, "-c", "copy", "-movflags", "+faststart",
+            out_path]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=180)
+    except Exception as e:
+        print(f"[rec] could not repackage the clip: {e}")
+        return False
+    if r.returncode == 0 and os.path.isfile(out_path) \
+            and os.path.getsize(out_path) > 0:
+        return True
+    err = (r.stderr or b"").decode("utf-8", "replace")[:300]
+    print(f"[rec] could not repackage the clip: {err.strip()}")
+    return False
+
+
 def _mux_worker(video_path, audio_path, out_path, declared_fps, frames,
                 seconds, on_done):
     ok = False
@@ -107,10 +127,19 @@ def _mux_worker(video_path, audio_path, out_path, declared_fps, frames,
         if exe is None or not has_audio:
             if exe is None:
                 warn_once()
-            # Nothing to join - keep the silent video under the real name.
-            if os.path.isfile(video_path):
-                os.replace(video_path, out_path)
-                ok = True
+            if not os.path.isfile(video_path):
+                return
+            # Nothing to join - but a Matroska temp file still has to be
+            # repackaged, because renaming it to .mp4 would hand the
+            # dashboard a file that is not the thing its name claims.
+            if exe is not None and os.path.splitext(video_path)[1] != ".mp4":
+                ok = _repackage(exe, video_path, out_path,
+                                _timestamp_scale(declared_fps, frames,
+                                                 seconds))
+                if ok:
+                    return
+            os.replace(video_path, out_path)
+            ok = True
             return
 
         scale = _timestamp_scale(declared_fps, frames, seconds)

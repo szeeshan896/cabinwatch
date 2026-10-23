@@ -452,6 +452,19 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### If the power goes out
+
+An mp4 only becomes playable when it is closed properly — the index saying
+where every frame is gets written at the very end. So a camera that loses
+power mid-clip used to lose the whole segment, not the last part of it:
+"moov atom not found", and up to five minutes of exactly the footage you
+would want after an incident.
+
+Segments are written as Matroska now, which writes as it goes, and are
+repackaged into mp4 when they close — or on the next start, if there was no
+chance to close them. Measured in `tests/test_power_cut.py`, pulling the plug
+now costs the last second or two instead of everything.
+
 ### Two devices with the same name
 
 Each camera needs its own name. If a second device connects under a name that
