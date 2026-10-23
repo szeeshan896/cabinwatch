@@ -130,31 +130,38 @@ class Camera:
 
 
 def build_clips():
-    """Two days of recordings, with the interesting ones in the small hours."""
+    """Recordings placed relative to now, so the data is the same at 3am.
+
+    An earlier version laid them out against fixed hours of the day, which
+    meant that running at six in the morning produced a different set from
+    running at six in the evening - and the test failed on a build machine
+    for reasons that had nothing to do with the code.
+    """
     now = time.time()
     today = time.localtime(now)
     midnight = time.mktime((today.tm_year, today.tm_mon, today.tm_mday,
                             0, 0, 0, 0, 0, -1))
+
+    def row(at, keep):
+        at = int(at)
+        return {"file": f"clip-{at}.mp4", "size_mb": 4.2, "at": at,
+                "when": time.strftime("%d %b %Y, %H:%M:%S",
+                                      time.localtime(at)),
+                "keep": keep}
+
+    # Today: far enough back to be safely in the past whatever the hour,
+    # and a mix of event and quiet within it so the filter has work to do.
     rows = []
-    for hour in (2, 3, 9, 14, 21):
-        for n in range(3):
-            at = midnight + hour * 3600 + n * 300
-            if at > now - 60:
-                continue
-            rows.append({"file": f"today-{hour:02d}-{n}.mp4",
-                         "size_mb": 4.2, "at": int(at),
-                         "when": time.strftime("%d %b %Y, %H:%M:%S",
-                                               time.localtime(at)),
-                         # A mix within the same hour, so the filter has
-                         # something to hide whatever time this runs at.
-                         "keep": hour in (2, 3) and n == 0})
-    for hour in (11, 23):
-        at = midnight - 86400 + hour * 3600
-        rows.append({"file": f"yesterday-{hour:02d}.mp4", "size_mb": 4.0,
-                     "at": int(at),
-                     "when": time.strftime("%d %b %Y, %H:%M:%S",
-                                           time.localtime(at)),
-                     "keep": False})
+    for minutes, keep in ((90, True), (75, False), (60, False), (45, True)):
+        at = now - minutes * 60
+        if at > midnight:
+            rows.append(row(at, keep))
+    if not rows:                      # the small hours: use just after midnight
+        rows = [row(midnight + 60, True), row(midnight + 120, False)]
+
+    # Yesterday, so there is always more than one day to choose between.
+    rows.append(row(midnight - 3600, False))
+    rows.append(row(midnight - 8 * 3600, True))
     return rows
 
 
@@ -177,6 +184,28 @@ def main():
     clips = build_clips()
     cam = Camera("cabin", "Cabin", clips)
     time.sleep(1.0)
+
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar))
+    opener.open(BASE + "/login",
+                data=urllib.parse.urlencode({"password": "demo"}).encode())
+
+    # Wait for the camera to be answering with its list before driving the
+    # page, rather than racing it and blaming the page for what is missing.
+    listed = []
+    for _ in range(40):
+        try:
+            listed = json.loads(
+                opener.open(BASE + "/clips/cabin", timeout=10).read()
+            ).get("clips", [])
+        except Exception:
+            listed = []
+        if len(listed) == len(clips):
+            break
+        time.sleep(0.5)
+    check("the camera answers with everything it is holding",
+          len(listed) == len(clips), f"{len(listed)} of {len(clips)}")
 
     # One clip also has a copy on the server, through the ordinary path.
     kept = clips[0]["file"]
