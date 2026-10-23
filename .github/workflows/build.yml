@@ -19,6 +19,12 @@ on:
         type: boolean
         default: false
 
+# One run per branch. Pushing again drops the older run rather than leaving
+# it to finish a build nobody is waiting for any more.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # -------------------------------------------------------------------------
   checks:
@@ -34,7 +40,16 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      # Installing the browser used to be able to hang the whole run.
+      # "--with-deps" shells out to apt, and when apt sits waiting the step
+      # has nothing to time it out - one run held a runner for an hour on a
+      # step that normally takes thirty seconds. So: a deadline, apt told
+      # never to ask questions, and a fallback to the plain install, because
+      # the runner image already carries nearly every library Chromium wants.
       - name: Install what the checks need
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           python -m pip install --upgrade pip
           # The camera side without sounddevice: a CI runner has no audio
@@ -44,7 +59,8 @@ jobs:
                       "pystray>=0.19.5" "pillow>=10.0.0"
           pip install -r requirements.txt
           pip install playwright
-          playwright install --with-deps chromium
+          timeout 8m playwright install --with-deps chromium \
+            || playwright install chromium
 
       - name: Run them
         # Some of these drive a real browser and record real video, so give
