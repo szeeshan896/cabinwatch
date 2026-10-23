@@ -150,12 +150,20 @@ class CameraService : LifecycleService(), WsClient.Events {
 
         if (intent?.action == ACTION_STOP) {
             settings.running = false
+            Watchdog.cancel(this)         // stopped on purpose: stay stopped
             stopEverything()
             stopSelf()
             return START_NOT_STICKY
         }
 
         goForeground()
+        isRunning = true
+        // Check on ourselves in a quarter of an hour. START_STICKY usually
+        // brings the service back, and "usually" is the problem: a battery
+        // optimiser or a swipe off the recents list can end it for good,
+        // and from the dashboard that looks like the room quietly stopped
+        // being watched some time in the night.
+        Watchdog.schedule(this)
 
         if (!settings.isConfigured()) {
             statusText = "not set up"
@@ -181,8 +189,21 @@ class CameraService : LifecycleService(), WsClient.Events {
     }
 
     override fun onDestroy() {
+        isRunning = false
         stopEverything()
         super.onDestroy()
+    }
+
+    /**
+     * Swiped off the recents list.
+     *
+     * On a lot of phones this kills the service outright, whatever
+     * START_STICKY asked for - and somebody tidying their recents has not
+     * decided to stop watching the room. The next check brings it back.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (settings.running) Watchdog.schedule(this)
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun stopEverything() {
@@ -1276,6 +1297,11 @@ class CameraService : LifecycleService(), WsClient.Events {
         private const val TAG = "CabinWatchService"
         private const val CHANNEL = "cabinwatch_camera"
         private const val NOTIF_ID = 1001
+        /** Set while the service is up, for the watchdog to look at. */
+        @Volatile
+        var isRunning = false
+            private set
+
         private const val SEGMENT_MS = 60_000L
 
         /** A siren nobody turns off flattens the battery. Two minutes. */

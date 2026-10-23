@@ -27,6 +27,7 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         Log.i("CabinWatchBoot", "restarting the camera after boot")
+        Watchdog.schedule(context)
         val service = Intent(context, CameraService::class.java)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

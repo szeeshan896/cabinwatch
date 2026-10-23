@@ -52,6 +52,12 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
+        <!-- Checks every quarter of an hour that the camera is still
+             running, and starts it again if something ended it. -->
+        <receiver
+            android:name=".Watchdog"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

@@ -874,7 +874,7 @@ function buildCard(c) {
       <div class="idle">Tap <b>Snap</b> or <b>Live</b> to look<br>
         <small>nothing is sent while this is off</small></div>
       <div class="gonebox" style="display:none">This camera is not
-        reporting<br><small>power, internet, or the app was closed</small></div>
+        reporting<br><small class="backwhen"></small></div>
       <img id="img-${c.id}" alt="" style="display:none">
       <div class="pill"></div>
       <div class="pad" style="display:none">
@@ -1051,6 +1051,21 @@ function updateCard(el, c) {
   const img = q("img"), idle = q(".idle");
   const gonebox = q(".gonebox");
   gonebox.style.display = c.online ? "none" : "flex";
+  if (!c.online) {
+    // Say what will actually bring it back, rather than leaving somebody
+    // staring at a grey card wondering whether to drive over there.
+    const back = q(".backwhen");
+    if (back) {
+      back.innerHTML = c.kind === "android"
+        ? "The app checks itself every 15 minutes and starts again after a "
+          + "reboot. If it was stopped on purpose, open it on the phone."
+        : c.kind === "browser"
+        ? "A browser camera stops when the page is closed or the phone "
+          + "sleeps. Open the page on that phone again."
+        : "If it is set to start with Windows it will come back when that "
+          + "machine is logged in to. Otherwise start it there.";
+    }
+  }
   if (!c.online) {
     img.style.display = "none"; idle.style.display = "none";
   } else if (mode === "off") {

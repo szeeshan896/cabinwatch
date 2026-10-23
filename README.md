@@ -550,6 +550,29 @@ repackaged into mp4 when they close — or on the next start, if there was no
 chance to close them. Measured in `tests/test_power_cut.py`, pulling the plug
 now costs the last second or two instead of everything.
 
+### When a camera stops, and what brings it back
+
+A camera that stops stays on the dashboard, greyed out, with the time it was
+last heard from — and the card says what will bring that particular kind of
+camera back, so nobody sits looking at a grey tile wondering whether to drive
+over there.
+
+- **The Android app** checks on itself every quarter of an hour and starts
+  again if something ended it — swiped off the recents list, stopped by a
+  battery optimiser, killed by a manufacturer's "cleaner". It also comes back
+  after a reboot. Stopping it from the app's own button keeps it stopped.
+- **The laptop agent** comes back if you turned on **Start by itself**.
+- **A browser camera** stops when the page is closed or the phone sleeps, and
+  has to be opened again on that phone. That is the browser's rule, not ours —
+  it is why the app exists.
+
+**What cannot be done:** starting a fully stopped app from the dashboard.
+Nothing can reach an app that is not running. Android allows exactly one
+exception — a Firebase Cloud Messaging push — and that needs a Firebase
+project set up under your own Google account, with its key added to the app.
+It is free, and it is the only route; if you want it, it is a small change
+once the project exists.
+
 ### Two devices with the same name
 
 Each camera needs its own name. If a second device connects under a name that
