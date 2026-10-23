@@ -21,6 +21,7 @@ All backends expose the same four calls, so the dashboard does not care which
 one is in use.
 """
 
+import re
 import shutil
 import threading
 import subprocess
@@ -167,12 +168,10 @@ class UvcPTZ(PTZBase):
     CV_PAN, CV_TILT, CV_ZOOM = 33, 34, 27
 
     def __init__(self, device="/dev/video0", cap=None, step=3600,
-                 pan_range=(-468000, 468000), tilt_range=(-324000, 324000)):
+                 pan_range=None, tilt_range=None):
         self.device = device
         self.cap = cap
         self.step = int(step)
-        self.pan_range = pan_range
-        self.tilt_range = tilt_range
         self.pan = 0
         self.tilt = 0
         self.presets = []
@@ -182,6 +181,24 @@ class UvcPTZ(PTZBase):
         if not self.available:
             print("[ptz] uvc backend needs v4l2-ctl (Linux) or an open "
                   "OpenCV capture (Windows)")
+
+        # How far the motor can actually turn differs between cameras, so ask
+        # the camera rather than assuming. The numbers below are only used
+        # when it cannot be asked - they are a typical gimbal webcam's range.
+        found = uvc_controls(device) if self._v4l2 else {}
+        self.pan_range = pan_range or self._range(found, "pan",
+                                                  (-468000, 468000))
+        self.tilt_range = tilt_range or self._range(found, "tilt",
+                                                    (-324000, 324000))
+        if found.get("pan") and found["pan"].get("step"):
+            self.step = int(step or found["pan"]["step"])
+
+    @staticmethod
+    def _range(found, axis, fallback):
+        ctrl = found.get(axis)
+        if ctrl and ctrl.get("min") is not None and ctrl.get("max") is not None:
+            return (int(ctrl["min"]), int(ctrl["max"]))
+        return fallback
 
     def _apply(self):
         if self._v4l2:
@@ -286,6 +303,150 @@ class HttpPTZ(PTZBase):
         return False
 
 
+# ---------------------------------------------------------------------------
+# Finding out what a camera can actually do
+#
+# A gimbal webcam is a lottery. Some expose the motor as a standard camera
+# control, which is what the "uvc" backend drives. Others only move from the
+# maker's own app, over a private channel we cannot speak. The box never
+# says which, so ask the camera.
+# ---------------------------------------------------------------------------
+CONTROL_NAMES = {
+    "pan": ("pan_absolute", "pan_speed", "pan_relative"),
+    "tilt": ("tilt_absolute", "tilt_speed", "tilt_relative"),
+    "zoom": ("zoom_absolute", "zoom_continuous", "zoom_relative"),
+}
+
+_CTRL_LINE = re.compile(
+    r"^\s*(?P<name>[a-z0-9_]+)\s+0x[0-9a-f]+\s+\((?P<type>\w+)\)"
+    r"\s*:\s*(?P<rest>.*)$")
+
+
+def uvc_controls(device="/dev/video0"):
+    """Which pan/tilt/zoom controls a camera exposes, by axis (Linux only)."""
+    v4l2 = shutil.which("v4l2-ctl")
+    if not v4l2:
+        return {}
+    try:
+        out = subprocess.run([v4l2, "-d", str(device), "--list-ctrls"],
+                             capture_output=True, text=True, timeout=8).stdout
+    except Exception:
+        return {}
+
+    found = {}
+    for line in out.splitlines():
+        m = _CTRL_LINE.match(line)
+        if not m:
+            continue
+        name = m.group("name")
+        for axis, names in CONTROL_NAMES.items():
+            if name not in names:
+                continue
+            fields = dict(re.findall(r"(\w+)=(-?\d+)", m.group("rest")))
+            found[axis] = {
+                "control": name,
+                "min": int(fields["min"]) if "min" in fields else None,
+                "max": int(fields["max"]) if "max" in fields else None,
+                "step": int(fields["step"]) if "step" in fields else None,
+                "value": int(fields["value"]) if "value" in fields else None,
+            }
+    return found
+
+
+def _probe_opencv(source):
+    """Try the motor through OpenCV, which is the only route on Windows.
+
+    OpenCV answering True does not prove anything moved - it often reports
+    success for a control the camera ignores - so this reports what it saw
+    and leaves the verdict to whoever is watching the camera.
+    """
+    try:
+        import cv2
+    except Exception as e:
+        print(f"  OpenCV is not available here: {e}")
+        return {}
+
+    cap = cv2.VideoCapture(int(source) if str(source).isdigit() else source)
+    if not cap.isOpened():
+        print(f"  could not open camera {source} - is it in use?")
+        return {}
+    # Some cameras only answer control requests once they are streaming.
+    cap.read()
+
+    axes = {"pan": UvcPTZ.CV_PAN, "tilt": UvcPTZ.CV_TILT,
+            "zoom": UvcPTZ.CV_ZOOM}
+    found = {}
+    try:
+        for axis, prop in axes.items():
+            before = cap.get(prop)
+            nudge = (before or 0) + (3600 if axis != "zoom" else 10)
+            accepted = bool(cap.set(prop, nudge))
+            after = cap.get(prop)
+            moved = accepted and after != before
+            print(f"  {axis:<5} accepted={accepted}  "
+                  f"value {before} -> {after}"
+                  + ("   <-- it moved" if moved else ""))
+            if moved:
+                found[axis] = {"control": f"opencv:{prop}", "value": before}
+                cap.set(prop, before)        # put it back
+    finally:
+        cap.release()
+    return found
+
+
+def probe(source=0, device=None):
+    """Print what this camera's motor exposes, and the config block for it."""
+    device = device or (f"/dev/video{source}" if str(source).isdigit()
+                        else source)
+
+    print(f"Looking for a motor on camera {source}")
+    found = uvc_controls(device)
+    if found:
+        print(f"  v4l2 controls on {device}:")
+        for axis, c in sorted(found.items()):
+            print(f"    {axis:<5} {c['control']:<18} "
+                  f"min={c['min']} max={c['max']} step={c['step']} "
+                  f"now={c['value']}")
+    elif shutil.which("v4l2-ctl"):
+        print(f"  v4l2 reports no pan/tilt/zoom control on {device}")
+    else:
+        print("  v4l2-ctl is not on this machine (normal on Windows), "
+              "trying OpenCV instead")
+
+    if not found:
+        print("  asking OpenCV - watch the camera while this runs:")
+        found = _probe_opencv(source)
+
+    print()
+    if "pan" in found or "tilt" in found:
+        pan = found.get("pan", {})
+        tilt = found.get("tilt", {})
+        print("This camera's motor can be driven directly. Put this in the"
+              " camera's config block:")
+        print('    "ptz": {')
+        print('        "type": "uvc",')
+        print(f'        "device": "{device}",')
+        if pan.get("step"):
+            print(f'        "step": {pan["step"]},')
+        if pan.get("min") is not None:
+            print(f'        "pan_range": [{pan["min"]}, {pan["max"]}],')
+        if tilt.get("min") is not None:
+            print(f'        "tilt_range": [{tilt["min"]}, {tilt["max"]}],')
+        print('    },')
+        return found
+
+    print("No motor control that we can drive.")
+    print()
+    print("That is not a fault - plenty of gimbal webcams only move from")
+    print("their maker's own app, over a private channel. What still works:")
+    print("  - the camera's own tracking, if it has it. It follows a face or")
+    print("    a person by itself, with nothing for us to send.")
+    print("  - everything else in CabinWatch: recording, alerts, listening,")
+    print("    talking. Only the arrows on the dashboard go away.")
+    print("Leave the camera out of the ptz block, or set \"type\": \"none\".")
+    return {}
+
+
 def build(conf, cap=None):
     """Make the PTZ controller described by a camera's config block."""
     kind = (conf or {}).get("type", "none").lower()
@@ -294,8 +455,12 @@ def build(conf, cap=None):
         return OnvifPTZ(conf.get("host", ""), conf.get("port", 80),
                         conf.get("user", ""), conf.get("password", ""))
     if kind == "uvc":
+        rng = conf.get("pan_range")
+        tlt = conf.get("tilt_range")
         return UvcPTZ(conf.get("device", "/dev/video0"), cap=cap,
-                      step=conf.get("step", 3600))
+                      step=conf.get("step", 3600),
+                      pan_range=tuple(rng) if rng else None,
+                      tilt_range=tuple(tlt) if tlt else None)
     if kind == "http":
         return HttpPTZ(conf.get("urls", {}), conf.get("auth"),
                        conf.get("verify", True))

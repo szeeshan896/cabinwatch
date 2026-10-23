@@ -345,6 +345,28 @@ For ONVIF you also need one extra package:
 pip install onvif-zeep
 ```
 
+### A USB gimbal webcam — ask it first
+
+A gimbal webcam is a lottery. Some expose the motor as a standard camera
+control, which is what `uvc` drives. Others move only from the maker's own app,
+over a private channel nothing else can speak. The box never says which, so ask
+the camera:
+
+```bash
+python agent/agent.py --probe-ptz 0        # 0 is the source number
+```
+
+It reports every pan/tilt/zoom control the camera exposes, with the real limits
+the camera itself declares, and prints the `ptz` block to paste — including that
+camera's own travel range, so holding an arrow stops where the motor stops
+instead of at some number we guessed.
+
+If it finds nothing, that is an answer too, not a fault. Everything else still
+works — recording, alerts, listening, talking — and a camera with its own face
+or person tracking keeps following the subject by itself, with nothing for us to
+send it. Only the arrows on the dashboard go away. Set `"type": "none"`, or
+leave the `ptz` block out.
+
 Arrow buttons then appear over that camera's picture on the dashboard, along
 with any positions the camera has saved ("Gate", "Door").
 

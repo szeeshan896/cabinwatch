@@ -13,6 +13,7 @@ cameras at once, each appearing separately on the dashboard.
     python agent/agent.py                  # uses agent/config.py
     python agent/agent.py --only cabin     # just one camera from the config
     python agent/agent.py --list-cameras   # see what this machine can see
+    python agent/agent.py --probe-ptz 0    # can we drive this camera's motor?
 
 What it does per camera
     - reads frames and writes them to this machine's own disk, one file a
@@ -1098,6 +1099,9 @@ def main():
                          "(can be given more than once)")
     ap.add_argument("--list-cameras", action="store_true",
                     help="show which cameras this machine can open, then exit")
+    ap.add_argument("--probe-ptz", metavar="SOURCE", default=None,
+                    help="ask a camera whether its motor can be driven from "
+                         "here, and print the config block for it")
     ap.add_argument("--setup", action="store_true",
                     help="ask the setup questions again and overwrite "
                          "cabinwatch.json")
@@ -1126,6 +1130,11 @@ def main():
                   "line above for why.")
         else:
             print("\nNo microphones found.")
+        return
+
+    if args.probe_ptz is not None:
+        import ptz
+        ptz.probe(args.probe_ptz)
         return
 
     cfg = load_config(force_setup=args.setup)
