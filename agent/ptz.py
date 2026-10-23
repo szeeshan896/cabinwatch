@@ -22,6 +22,8 @@ one is in use.
 """
 
 import re
+import sys
+import time
 import shutil
 import threading
 import subprocess
@@ -168,8 +170,15 @@ class UvcPTZ(PTZBase):
     CV_PAN, CV_TILT, CV_ZOOM = 33, 34, 27
 
     def __init__(self, device="/dev/video0", cap=None, step=3600,
-                 pan_range=None, tilt_range=None):
+                 pan_range=None, tilt_range=None,
+                 invert_pan=False, invert_tilt=False):
         self.device = device
+        # Which way a positive number turns the camera is not agreed between
+        # makers - on an OBSBOT a bigger pan number turns it to *your* left -
+        # so the direction is a setting rather than an assumption. Get it
+        # wrong and every arrow on the dashboard does the opposite.
+        self.sign_pan = -1 if invert_pan else 1
+        self.sign_tilt = -1 if invert_tilt else 1
         self.cap = cap
         self.step = int(step)
         self.pan = 0
@@ -221,18 +230,23 @@ class UvcPTZ(PTZBase):
                 return False
         return False
 
+    @staticmethod
+    def _clamp(value, limits):
+        low, high = min(limits), max(limits)
+        return max(low, min(high, int(value)))
+
     def move(self, action, speed=0.5):
         if not self.available:
             return False
         step = int(self.step * max(0.1, min(1.0, float(speed))) * 2)
-        if action == "left":
-            self.pan = max(self.pan_range[0], self.pan - step)
-        elif action == "right":
-            self.pan = min(self.pan_range[1], self.pan + step)
-        elif action == "up":
-            self.tilt = min(self.tilt_range[1], self.tilt + step)
-        elif action == "down":
-            self.tilt = max(self.tilt_range[0], self.tilt - step)
+        if action in ("left", "right"):
+            delta = step if action == "right" else -step
+            self.pan = self._clamp(self.pan + delta * self.sign_pan,
+                                   self.pan_range)
+        elif action in ("up", "down"):
+            delta = step if action == "up" else -step
+            self.tilt = self._clamp(self.tilt + delta * self.sign_tilt,
+                                    self.tilt_range)
         else:
             return False
         return self._apply()
@@ -394,7 +408,68 @@ def _probe_opencv(source):
     return found
 
 
-def probe(source=0, device=None):
+def _set_control(device, control, value):
+    """Set one UVC control, the Linux way."""
+    v4l2 = shutil.which("v4l2-ctl")
+    if not v4l2:
+        return False
+    try:
+        done = subprocess.run(
+            [v4l2, "-d", str(device), "--set-ctrl", f"{control}={int(value)}"],
+            capture_output=True, text=True, timeout=5)
+        return done.returncode == 0
+    except Exception:
+        return False
+
+
+def _ask_direction(device, found):
+    """Move the camera and ask which way it went.
+
+    Nobody should have to read a datasheet to find out that their arrows are
+    reversed, and nothing but the camera itself can answer it.
+    """
+    answers = {}
+    questions = (
+        ("pan", "pan_absolute", "left", "right", "l", "r"),
+        ("tilt", "tilt_absolute", "down", "up", "d", "u"),
+    )
+    for axis, control, low_word, high_word, low_key, high_key in questions:
+        info = found.get(axis) or {}
+        if info.get("control") != control or info.get("max") is None:
+            continue
+
+        here = int(info.get("value") or 0)
+        there = int(info["max"] * 0.35)
+        if there == here:
+            there = int(info["min"] * 0.35)
+
+        print(f"\n  Watch the camera. Turning it on the {axis} axis now.")
+        if not _set_control(device, control, there):
+            print(f"  could not set {control} - skipping the {axis} check")
+            continue
+        time.sleep(2.0)
+        _set_control(device, control, here)
+
+        prompt = (f"  Which way did it go? "
+                  f"[{low_key}] {low_word}  [{high_key}] {high_word}  "
+                  f"[s] skip : ")
+        try:
+            said = input(prompt).strip().lower()[:1]
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return answers
+        if said == low_key:
+            # A bigger number moved it the way we call the lower one, so
+            # every arrow for this axis has to be sent the other way round.
+            answers[axis] = True
+            print(f"  noted - the {axis} arrows need inverting")
+        elif said == high_key:
+            answers[axis] = False
+            print(f"  noted - the {axis} arrows are the right way round")
+    return answers
+
+
+def probe(source=0, device=None, ask=None):
     """Print what this camera's motor exposes, and the config block for it."""
     device = device or (f"/dev/video{source}" if str(source).isdigit()
                         else source)
@@ -417,6 +492,10 @@ def probe(source=0, device=None):
         print("  asking OpenCV - watch the camera while this runs:")
         found = _probe_opencv(source)
 
+    directions = {}
+    if found and (ask if ask is not None else sys.stdin.isatty()):
+        directions = _ask_direction(device, found)
+
     print()
     if "pan" in found or "tilt" in found:
         pan = found.get("pan", {})
@@ -432,7 +511,17 @@ def probe(source=0, device=None):
             print(f'        "pan_range": [{pan["min"]}, {pan["max"]}],')
         if tilt.get("min") is not None:
             print(f'        "tilt_range": [{tilt["min"]}, {tilt["max"]}],')
+        for axis in ("pan", "tilt"):
+            if directions.get(axis):
+                print(f'        "invert_{axis}": True,')
         print('    },')
+        if found and not directions:
+            print()
+            print("The arrows may come out reversed - which way a positive"
+                  " number turns")
+            print("a camera is not agreed between makers. If right goes left,"
+                  " add")
+            print('"invert_pan": True (or "invert_tilt": True) to that block.')
         return found
 
     print("No motor control that we can drive.")
@@ -460,7 +549,9 @@ def build(conf, cap=None):
         return UvcPTZ(conf.get("device", "/dev/video0"), cap=cap,
                       step=conf.get("step", 3600),
                       pan_range=tuple(rng) if rng else None,
-                      tilt_range=tuple(tlt) if tlt else None)
+                      tilt_range=tuple(tlt) if tlt else None,
+                      invert_pan=bool(conf.get("invert_pan", False)),
+                      invert_tilt=bool(conf.get("invert_tilt", False)))
     if kind == "http":
         return HttpPTZ(conf.get("urls", {}), conf.get("auth"),
                        conf.get("verify", True))

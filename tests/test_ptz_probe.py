@@ -116,6 +116,101 @@ def test_the_backend_uses_those_limits():
     return ok
 
 
+def test_the_arrows_can_be_turned_around():
+    """Which way a positive number turns a camera is not agreed on.
+
+    On an OBSBOT a bigger pan number turns the camera to your left, so
+    without this every arrow on the dashboard does the opposite of what it
+    says - which is the kind of thing nobody should have to read a datasheet
+    to discover.
+    """
+    def plain(_):
+        m = ptz.UvcPTZ("/dev/video2")
+        m.move("right", 1.0)
+        return m.pan
+
+    def inverted(_):
+        m = ptz.build({"type": "uvc", "device": "/dev/video2",
+                       "invert_pan": True})
+        m.move("right", 1.0)
+        return m.pan
+
+    normal = with_v4l2(GIMBAL, plain)
+    flipped = with_v4l2(GIMBAL, inverted)
+    ok = check("inverting pan sends the arrow the other way",
+               normal > 0 and flipped < 0 and normal == -flipped,
+               f"right goes to {normal} normally, {flipped} inverted")
+
+    def both_ends(_):
+        m = ptz.build({"type": "uvc", "device": "/dev/video2",
+                       "invert_pan": True, "invert_tilt": True})
+        for _ in range(200):
+            m.move("right", 1.0)
+            m.move("up", 1.0)
+        return m.pan, m.tilt
+
+    pan, tilt = with_v4l2(GIMBAL, both_ends)
+    return ok and check("an inverted axis still stops at the end of travel",
+                        pan == -170000 and tilt == -30000,
+                        f"pan {pan} tilt {tilt}")
+
+
+def test_the_direction_question():
+    """The probe moves the camera and takes the answer from whoever looked."""
+    moved = []
+
+    def body(_):
+        real_set, real_sleep = ptz._set_control, ptz.time.sleep
+        real_input = ptz.input if hasattr(ptz, "input") else None
+        answers = iter(["l", "u"])
+        ptz._set_control = lambda dev, ctrl, val: moved.append((ctrl, val)) or True
+        ptz.time.sleep = lambda s: None
+        import builtins
+        real_builtin = builtins.input
+        builtins.input = lambda prompt="": next(answers)
+        try:
+            return ptz._ask_direction("/dev/video2",
+                                      ptz.uvc_controls("/dev/video2"))
+        finally:
+            ptz._set_control, ptz.time.sleep = real_set, real_sleep
+            builtins.input = real_builtin
+
+    said = with_v4l2(GIMBAL, body)
+    ok = check("answering 'it went left' marks pan for inverting",
+               said.get("pan") is True, str(said))
+    ok &= check("answering 'it went up' leaves tilt alone",
+               said.get("tilt") is False, str(said))
+    ok &= check("the camera was moved and then put back",
+                len(moved) == 4 and moved[1][1] == 0 and moved[3][1] == 0,
+                str(moved))
+    return ok
+
+
+def test_the_question_is_skipped_when_nobody_can_answer():
+    """Run from a script or a service, it must not sit waiting on input."""
+    def body(_):
+        import builtins
+        real = builtins.input
+        builtins.input = lambda prompt="": (_ for _ in ()).throw(
+            AssertionError("asked a question with nobody there"))
+        real_out = sys.stdout
+        try:
+            sys.stdout = io.StringIO()
+            ptz.probe(2, device="/dev/video2", ask=False)
+        finally:
+            sys.stdout = real_out
+            builtins.input = real
+        return True
+
+    import io
+    try:
+        with_v4l2(GIMBAL, body)
+    except AssertionError as e:
+        return check("no question is asked when nobody is watching", False,
+                     str(e))
+    return check("no question is asked when nobody is watching", True)
+
+
 def test_a_configured_range_wins():
     """Someone who has measured their own camera must be able to say so."""
     def body(_):
@@ -146,6 +241,9 @@ def main():
     for t in (test_reads_the_limits_a_gimbal_reports,
               test_a_camera_with_no_motor_is_not_an_error,
               test_the_backend_uses_those_limits,
+              test_the_arrows_can_be_turned_around,
+              test_the_direction_question,
+              test_the_question_is_skipped_when_nobody_can_answer,
               test_a_configured_range_wins,
               test_the_fallback_when_there_is_no_v4l2):
         ok &= bool(t())

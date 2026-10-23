@@ -361,6 +361,33 @@ the camera itself declares, and prints the `ptz` block to paste — including th
 camera's own travel range, so holding an arrow stops where the motor stops
 instead of at some number we guessed.
 
+It also turns the camera and asks you which way it actually went, because
+which direction a positive number means is not agreed between makers. On an
+OBSBOT a bigger pan number turns the camera to *your* left, so without that
+answer every arrow on the dashboard would do the opposite of what it says.
+
+**An OBSBOT Tiny 2 or Tiny SE is this kind of camera** — its gimbal is a
+standard UVC control, so the arrows work. Its block, if you would rather not
+run the probe:
+
+```python
+"ptz": {
+    "type": "uvc",
+    "device": "/dev/video0",            # ignored on Windows
+    "step": 3600,
+    "pan_range": [-468000, 468000],     # about ±130°
+    "tilt_range": [-324000, 324000],    # about ±90°
+    "invert_pan": True,
+},
+```
+
+One quirk to know about on these: the camera does not reliably report back
+where it is pointing — a read returns the last position that was *asked for*,
+not where the gimbal actually is. That matters if you leave the camera's own
+AI tracking switched on, because then it moves itself and our idea of its
+position goes stale. **Home** puts it back to the centre and both agree again.
+Either use the arrows or use its tracking, not both at once.
+
 If it finds nothing, that is an answer too, not a fault. Everything else still
 works — recording, alerts, listening, talking — and a camera with its own face
 or person tracking keeps following the subject by itself, with nothing for us to

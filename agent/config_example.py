@@ -143,10 +143,25 @@ CAMERAS = {
     #     },
     #
     #     # 2. A USB webcam whose motor is a standard camera control.
+    #     #    Run  python agent/agent.py --probe-ptz 0  and it prints this
+    #     #    block already filled in for your camera, including which way
+    #     #    round the arrows go.
     #     # "ptz": {
     #     #     "type": "uvc",
     #     #     "device": "/dev/video0",   # Linux; ignored on Windows
     #     #     "step": 3600,
+    #     # },
+    #     #
+    #     #    An OBSBOT Tiny 2 (or Tiny SE) is this kind, and these are its
+    #     #    numbers. A bigger pan number turns it to *your* left, hence
+    #     #    the invert - without it every arrow does the opposite.
+    #     # "ptz": {
+    #     #     "type": "uvc",
+    #     #     "device": "/dev/video0",
+    #     #     "step": 3600,
+    #     #     "pan_range": [-468000, 468000],    # about +/- 130 degrees
+    #     #     "tilt_range": [-324000, 324000],   # about +/- 90 degrees
+    #     #     "invert_pan": True,
     #     # },
     #
     #     # 3. A camera with its own little web API. {speed} is filled in.
