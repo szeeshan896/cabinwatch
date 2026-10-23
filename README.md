@@ -163,6 +163,43 @@ Leave that browser tab open and in the foreground. A phone browser stops the
 camera if you switch apps, so give the phone this one job — or use the app
 below, which does not have that problem.
 
+### If the APK will not install
+
+Android refuses to install an app over one that was signed with a different
+key. The error is just **"App not installed"**, with no explanation.
+
+Every build used to be signed with whatever throwaway key the build machine
+happened to make that day, so each new APK was a stranger to the one already
+on the phone. To get out of it now: **uninstall CabinWatch on the phone, then
+install the APK.** You will have to type the server address and token again.
+
+To stop it happening again, give the builds one key that stays the same. Once,
+on any machine with Java:
+
+```bash
+keytool -genkeypair -v -keystore cabinwatch.jks -alias cabinwatch \
+        -keyalg RSA -keysize 2048 -validity 10000 \
+        -storepass CHOOSE-A-PASSWORD -keypass CHOOSE-A-PASSWORD \
+        -dname "CN=CabinWatch, O=CabinWatch, C=IN"
+
+base64 -w0 cabinwatch.jks      # macOS: base64 -i cabinwatch.jks
+```
+
+Then in the repository, **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the long line `base64` printed |
+| `ANDROID_KEYSTORE_PASSWORD` | the password you chose |
+
+**Keep `cabinwatch.jks` somewhere safe and do not put it in the repository.**
+Lose it and the next APK cannot update the installed app — you would be back to
+uninstalling first. Every build from then on is signed with it, each one a
+higher version than the last, and updates install over the top.
+
+Until those secrets exist the build still works; it just says so in the build
+log and the APK cannot update an app already on a phone.
+
 ### 3b. The Android app — runs in the background
 
 Spare Android phones are better served by the app. It uses a foreground
