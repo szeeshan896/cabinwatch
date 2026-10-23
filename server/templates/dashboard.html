@@ -162,7 +162,8 @@
            text-overflow: ellipsis; white-space: nowrap; }
   .ev .t { margin-left: auto; font-size: 11px; color: #6e7681;
            flex: 0 0 auto; text-align: right; }
-  .ev.k-impact .k, .ev.k-person .k, .ev.k-moved .k { color: #ff7b72; }
+  .ev.k-impact .k, .ev.k-person .k, .ev.k-moved .k,
+  .ev.k-unplugged .k { color: #ff7b72; }
   .ev.k-battery_low .k { color: #d29922; }
   .ev.k-cry .k { color: #ffa657; }
   .ev.k-offline .k { color: #d29922; }
@@ -258,7 +259,7 @@ const KIND_LABEL = {
   impact: "Thud / fall", person: "Person seen", offline: "Camera offline",
   online: "Camera online", disk: "Storage low", test: "Test alert",
   moved: "Camera was moved", battery_low: "Battery low",
-  conflict: "Two devices, one name"
+  conflict: "Two devices, one name", unplugged: "Unplugged"
 };
 
 /* ---------- status socket ---------- */
@@ -650,6 +651,7 @@ function buildCard(c) {
         <button data-act="clips">Clips</button>
         <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
         <button data-act="rotate" title="Turn the picture a quarter turn - for a camera that is not mounted the right way up">Rotate</button>
+        <button data-act="alarm" title="Sound a siren and flash the torch on the device itself">Siren</button>
         <button data-act="forget" class="ghost" style="display:none">Remove</button>
       </div>
       <div class="inline lensrow" style="display:none">
@@ -697,6 +699,14 @@ function buildCard(c) {
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id);
+  };
+  act("alarm").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    if (!c2.alarm && !confirm(
+        `Sound the siren on "${c2.name || id}"?\n\n`
+        + `It will be loud, wherever that device is, and the torch will `
+        + `flash. It stops by itself after two minutes.`)) return;
+    cmd(id, "alarm", { on: !c2.alarm });
   };
   act("rotate").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
@@ -822,6 +832,11 @@ function updateCard(el, c) {
 
   // Say which way it is turned, so a camera left sideways is obvious
   // without having to work it out from the picture.
+  const siren = q('[data-act="alarm"]');
+  setText(siren, c.alarm ? "Siren - stop" : "Siren");
+  siren.classList.toggle("talking", !!c.alarm);
+  siren.disabled = !c.has_siren;
+
   const turn = Number(heldValue(c.id, "rotate", c.rotate)) || 0;
   const rot = q('[data-act="rotate"]');
   setText(rot, turn ? `Rotate ${turn}\u00B0` : "Rotate");

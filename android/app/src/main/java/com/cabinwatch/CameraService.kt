@@ -191,6 +191,7 @@ class CameraService : LifecycleService(), WsClient.Events {
         } catch (_: Exception) {
         }
         sensors = null
+        setAlarm(false)
         stopMic()
         stopSegment()
         try {
@@ -729,6 +730,88 @@ class CameraService : LifecycleService(), WsClient.Events {
         fireEvent(kind, detail, latestBitmap, 0)
     }
 
+    // ======================================================================
+    // The siren
+    //
+    // Somebody standing in the cabin at two in the morning does not expect
+    // the phone on the shelf to start screaming at them with its torch
+    // going. It is a deterrent, and it stops by itself - a siren nobody is
+    // there to turn off is one that runs the battery flat and wakes the
+    // neighbours until it does.
+    // ======================================================================
+    private var sirenThread: Thread? = null
+    private val sirenOn = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun setAlarm(on: Boolean) {
+        if (on == sirenOn.get()) return
+        sirenOn.set(on)
+        torch(on)
+        if (on) startSiren() else sirenThread = null
+        pushState()
+    }
+
+    private fun startSiren() {
+        handler.postDelayed({ if (sirenOn.get()) setAlarm(false) }, SIREN_MAX_MS)
+        sirenThread = Thread {
+            val rate = 22050
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(rate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(
+                    AudioTrack.getMinBufferSize(
+                        rate, AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    ).coerceAtLeast(4096) * 2
+                )
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            try {
+                track.play()
+                val block = ShortArray(rate / 10)
+                var phase = 0.0
+                var step = 0
+                while (sirenOn.get()) {
+                    // Two tones alternating - much harder to ignore than one.
+                    val hz = if ((step / 3) % 2 == 0) 740.0 else 980.0
+                    for (i in block.indices) {
+                        phase += 2.0 * Math.PI * hz / rate
+                        block[i] = (Math.sin(phase) * 12000).toInt().toShort()
+                    }
+                    track.write(block, 0, block.size)
+                    step++
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "siren failed: ${e.message}")
+            } finally {
+                try {
+                    track.stop(); track.release()
+                } catch (_: Exception) {
+                }
+            }
+        }.also { it.isDaemon = true; it.start() }
+    }
+
+    /** The torch, where this camera has one. A front camera will not. */
+    private fun torch(on: Boolean) {
+        try {
+            val cam = camera ?: return
+            if (cam.cameraInfo.hasFlashUnit()) cam.cameraControl.enableTorch(on)
+        } catch (e: Exception) {
+            Log.i(TAG, "no torch here: ${e.message}")
+        }
+    }
+
     private fun ensureAudioTrack(): AudioTrack? {
         audioTrack?.let { return it }
         return try {
@@ -948,6 +1031,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             }
             "audio" -> sendMic = msg.optBoolean("on")
             "talk" -> if (msg.optBoolean("on")) ensureAudioTrack()
+            "alarm" -> handler.post { setAlarm(msg.optBoolean("on")) }
             "record" -> {
                 val on = msg.optBoolean("on")
                 paused = !on
@@ -1109,6 +1193,8 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("baby_mode", settings.babyMode)
             put("noise_filter", settings.noiseFilter)
             put("rotate", settings.rotate)
+            put("alarm", sirenOn.get())
+            put("has_siren", true)
             put("armed", settings.armed)
             put("clips", clips.count())
             put("disk_free_gb", clips.freeGb())
@@ -1156,6 +1242,9 @@ class CameraService : LifecycleService(), WsClient.Events {
         private const val CHANNEL = "cabinwatch_camera"
         private const val NOTIF_ID = 1001
         private const val SEGMENT_MS = 60_000L
+
+        /** A siren nobody turns off flattens the battery. Two minutes. */
+        private const val SIREN_MAX_MS = 120_000L
         private const val EVENT_MIN_GAP = 25_000L
         const val ACTION_STOP = "com.cabinwatch.STOP"
     }

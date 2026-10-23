@@ -905,6 +905,9 @@ async function handle(m) {
     case "rotate":
       setRotation(m.value);
       break;
+    case "alarm":
+      setAlarm(!!m.on);
+      break;
     case "noise_filter":
       noiseFilter = !!m.on;
       await applyNoiseFilter();
@@ -1014,6 +1017,8 @@ function pushState() {
     zoom: zoom,
     has_audio: true,
     has_speaker: true,
+    has_siren: true,
+    alarm: alarmOn,
     noise_filter: noiseFilter,
     rotate: rotate,
     ptz: false
@@ -1056,6 +1061,102 @@ function ago(ms) {
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   return `${Math.round(s / 360) / 10} h ago`;
+}
+
+/* =======================================================================
+   The siren
+
+   Somebody standing in your cabin at two in the morning does not expect
+   the phone on the shelf to start screaming at them with its torch going.
+   It is a deterrent, and it is also how you find out whether the person on
+   the other end of the picture can hear you.
+
+   It stops by itself. A siren nobody is there to turn off is a siren that
+   runs the battery flat and annoys the neighbours until it does.
+   ======================================================================= */
+let alarmOn = false, alarmStop = null, alarmNodes = null, alarmFlash = null;
+const ALARM_MAX_MS = 120000;
+
+function setAlarm(on) {
+  if (on === alarmOn) return;
+  alarmOn = on;
+  if (on) startAlarm(); else stopAlarm();
+  pushState();
+}
+
+function startAlarm() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume();
+
+    // Two tones sliding against each other - far harder to ignore than one.
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(audioCtx.destination);
+    const tones = [700, 1100].map(hz => {
+      const o = audioCtx.createOscillator();
+      o.type = "square";
+      o.frequency.value = hz;
+      o.connect(gain);
+      o.start();
+      return o;
+    });
+    gain.gain.exponentialRampToValueAtTime(0.5, audioCtx.currentTime + 0.3);
+
+    let up = true;
+    const warble = setInterval(() => {
+      up = !up;
+      tones.forEach((o, i) => {
+        o.frequency.setTargetAtTime(up ? [700, 1100][i] : [520, 880][i],
+                                    audioCtx.currentTime, 0.02);
+      });
+    }, 350);
+
+    alarmNodes = { tones, gain, warble };
+    log("siren on");
+  } catch (e) {
+    log("could not sound the siren: " + e.message);
+  }
+
+  torch(true);
+  alarmFlash = setInterval(() => {
+    document.body.style.background =
+      document.body.style.background === "rgb(255, 0, 0)" ? "" : "rgb(255,0,0)";
+  }, 400);
+
+  clearTimeout(alarmStop);
+  alarmStop = setTimeout(() => setAlarm(false), ALARM_MAX_MS);
+}
+
+function stopAlarm() {
+  clearTimeout(alarmStop); alarmStop = null;
+  clearInterval(alarmFlash); alarmFlash = null;
+  document.body.style.background = "";
+  torch(false);
+  if (!alarmNodes) return;
+  const { tones, gain, warble } = alarmNodes;
+  alarmNodes = null;
+  clearInterval(warble);
+  try {
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+    setTimeout(() => tones.forEach(o => { try { o.stop(); } catch (e) {} }), 300);
+  } catch (e) {}
+  log("siren off");
+}
+
+/* The torch, where the phone will let us have it. Plenty will not - it is
+   only offered on the back camera, and only on some browsers - so a refusal
+   is normal and not worth shouting about. */
+function torch(on) {
+  try {
+    const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0]
+                                                  : null;
+    if (!track || !track.getCapabilities) return;
+    if (!track.getCapabilities().torch) return;
+    track.applyConstraints({ advanced: [{ torch: !!on }] }).catch(() => {});
+  } catch (e) {}
 }
 
 /* =======================================================================

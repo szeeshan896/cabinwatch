@@ -452,6 +452,27 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### The siren
+
+**Siren** on a camera's card makes that device scream — a two-tone wail
+through its own speaker, with the torch flashing where the phone has one. It
+is a deterrent, and it is also how you find out whether anybody is actually
+there. It stops by itself after two minutes, because a siren nobody turns off
+flattens the battery and takes the camera with it.
+
+### When a camera is unplugged
+
+Pulling the charger is the first thing anybody does to a phone they are
+taking, and it happens long before the battery is low enough for the usual
+warning — which would reach you hours later, from a phone that is no longer
+in the building. So losing power is its own alert, and it gets through quiet
+hours.
+
+It waits a few seconds before believing it: phones misreport for a moment,
+and being woken at three in the morning by a loose cable is worse than being
+told three seconds later. A laptop on mains has no battery to report, so it
+never raises this at all.
+
 ### If the camera itself is what gets stolen
 
 Recordings live on the device that made them. For the baby that is exactly
@@ -510,6 +531,8 @@ it off the list once you are done with it.
 | **Sound** | Continuous noise that was not clearly a cry. |
 | **Camera was moved** | The camera itself was turned, knocked or covered. |
 | **Battery low** | A phone camera is about to die. |
+| **Unplugged** | A camera that was charging no longer is. |
+| **Two devices, one name** | Two cameras are set up with the same name. |
 | **Camera offline** | It stopped reporting — power, internet or battery. |
 
 Cries, thuds, people and a camera going offline get through quiet hours. The

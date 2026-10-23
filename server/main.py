@@ -49,6 +49,7 @@ SIMPLE_COMMANDS = {
     "lens":    "lens",          # {"id": "<device id>"} - switch front/back
     "zoom":    "zoom",          # {"value": 1.0 .. 4.0} - digital zoom
     "rotate":  "rotate",        # {"value": 0|90|180|270} - stand the view up
+    "alarm":   "alarm",         # {"on": bool} - siren and torch, as a scare
     "ptz":     "ptz",           # {"action": "left"|"right"|"up"|"down"|
                                 #  "stop"|"preset"|"save_preset"|"home",
                                 #  "speed": 0..1, "preset": "<name>"}
@@ -271,6 +272,56 @@ async def forget_camera(cam_id: str, request: Request):
     return {"ok": True}
 
 
+# How long the charger has to stay out before we believe it. Phones
+# misreport for a moment, and waking somebody at three in the morning over a
+# loose cable is worse than telling them three seconds later.
+UNPLUG_SETTLE = 3.0
+
+
+async def _watch_the_power(cam: Camera):
+    """Say so when a camera stops being plugged in.
+
+    Pulling the charger is the first thing anybody does to a phone they are
+    taking, and it happens long before the battery gets low enough for the
+    usual warning - which would arrive hours later, from a phone that is no
+    longer in the building.
+
+    A machine with no battery reports nothing here and is left alone.
+    """
+    now = cam.state.get("charging")
+
+    if now is not False:
+        # Plugged in, or a camera that has no opinion about it. Either way
+        # this is the state we want it in, so forget what came before.
+        if now is True:
+            cam._was_plugged = True
+        cam._unplugged_since = None
+        cam._unplug_told = False
+        return
+
+    if not getattr(cam, "_was_plugged", False):
+        return          # it was never on charge; nothing has changed
+
+    since = getattr(cam, "_unplugged_since", None)
+    if since is None:
+        cam._unplugged_since = time.time()
+        return
+    if time.time() - since < UNPLUG_SETTLE or getattr(cam, "_unplug_told",
+                                                      False):
+        return
+
+    cam._unplug_told = True
+    cam._was_plugged = False
+    battery = cam.state.get("battery")
+    detail = (f"{cam.name} has been unplugged"
+              + (f" and is on {battery}% battery" if battery is not None
+                 else "")
+              + ". It was charging a moment ago.")
+    ev = hub.add_event(cam.cam_id, cam.name, "unplugged", detail)
+    await notifier.send(cam.cam_id, cam.name, "unplugged", detail)
+    return ev
+
+
 async def _keep_a_copy(cam: Camera, filename: str):
     """Pull one clip off a camera and put it in the evidence store."""
     if "/" in filename or "\\" in filename or ".." in filename:
@@ -442,6 +493,7 @@ async def _on_camera_message(cam: Camera, text: str):
                 cam.state[k] = msg[k]
         if msg.get("name"):
             cam.name = msg["name"]
+        await _watch_the_power(cam)
         await hub.broadcast_state()
 
     elif t == "event":

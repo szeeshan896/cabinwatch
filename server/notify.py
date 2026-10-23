@@ -28,6 +28,8 @@ KINDS = {
     "person":  ("Someone is there",     5, "rotating_light"),
     "moved":   ("Camera was moved",     5, "rotating_light"),
     "battery_low": ("Camera battery low", 4, "battery"),
+    "unplugged": ("Camera was unplugged", 5, "electric_plug"),
+    "conflict": ("Two cameras, one name", 4, "warning"),
     "offline": ("Camera went offline",  4, "warning"),
     "online":  ("Camera back online",   2, "white_check_mark"),
     "disk":    ("Camera storage low",   3, "floppy_disk"),
@@ -37,7 +39,8 @@ KINDS = {
 # These always push, even during quiet hours.
 # A camera being interfered with, or about to die, matters at 3am as much
 # as at noon - more, in fact.
-ALWAYS_PUSH = {"impact", "cry", "person", "offline", "moved", "battery_low"}
+ALWAYS_PUSH = {"impact", "cry", "person", "offline", "moved", "battery_low",
+               "unplugged"}
 
 
 class Notifier:

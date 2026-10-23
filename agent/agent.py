@@ -34,6 +34,7 @@ import time
 import base64
 import queue
 import struct
+import contextlib
 import socket
 import argparse
 import threading
@@ -227,6 +228,8 @@ class CameraSession:
         self.speaker_enabled = conf.get("speaker", True) and sd is not None
         self.send_audio = False
         self.talk_queue = queue.Queue(maxsize=80)
+        self.alarm = False
+        self._alarm_until = 0.0
 
         # -- pan / tilt
         self.ptz = ptz_mod.build(conf.get("ptz"), cap=None)
@@ -492,6 +495,9 @@ class CameraSession:
                 self.zoom = max(1.0, min(4.0, float(m.get("value", 1))))
             except (TypeError, ValueError):
                 pass
+
+        elif t == "alarm":
+            self.set_alarm(m.get("on"))
 
         elif t == "rotate":
             self.rotate = self._clean_rotation(m.get("value", 0))
@@ -861,6 +867,49 @@ class CameraSession:
             # Stop opening a sound file per clip that nothing will ever write.
             self.rec.want_audio = False
 
+    # A siren, through the same speaker that talk-back uses. Feeding it
+    # into the talk queue means one open device, which is what keeps
+    # Windows from refusing the second one.
+    SIREN_MAX_SECONDS = 120.0
+
+    def set_alarm(self, on):
+        on = bool(on) and self.speaker_enabled
+        if on == self.alarm:
+            return
+        self.alarm = on
+        if on:
+            self._alarm_until = time.time() + self.SIREN_MAX_SECONDS
+            print(f"[{self.cam_id}] siren on")
+        else:
+            self._alarm_until = 0.0
+            with contextlib.suppress(Exception):
+                while True:
+                    self.talk_queue.get_nowait()
+            print(f"[{self.cam_id}] siren off")
+        self.push_state()
+
+    def siren_loop(self):
+        """Feed the speaker a two-tone wail for as long as the siren is on."""
+        block = int(AUDIO_RATE * 0.1)
+        phase = 0.0
+        step = 0
+        while not self._stop.is_set():
+            if not self.alarm:
+                self._stop.wait(0.2)
+                continue
+            if time.time() > self._alarm_until:
+                self.set_alarm(False)
+                continue
+
+            hz = 740.0 if (step // 3) % 2 == 0 else 980.0
+            t = (np.arange(block) + phase) / AUDIO_RATE
+            phase += block
+            wave = (np.sin(2 * np.pi * hz * t) * 0.35 * 32767).astype("<i2")
+            with contextlib.suppress(queue.Full):
+                self.talk_queue.put_nowait(wave.tobytes())
+            step += 1
+            self._stop.wait(0.09)
+
     def _on_talk(self, pcm_bytes):
         if not self.speaker_enabled:
             return
@@ -982,6 +1031,8 @@ class CameraSession:
             "active_lens": self.active_lens,
             "zoom": self.zoom,
             "rotate": self.rotate,
+            "alarm": bool(self.alarm),
+            "has_siren": bool(self.speaker_enabled),
             "noise_filter": bool(self.denoise),
             "has_audio": bool(self.audio_enabled),
             "has_speaker": bool(self.speaker_enabled),
@@ -996,7 +1047,8 @@ class CameraSession:
     # =====================================================================
     def start(self):
         for fn in (self.ws_loop, self.capture_loop, self.stream_loop,
-                   self.state_loop, self.audio_loop, self.speaker_loop):
+                   self.state_loop, self.audio_loop, self.speaker_loop,
+                   self.siren_loop):
             t = threading.Thread(target=fn, daemon=True,
                                  name=f"{self.cam_id}-{fn.__name__}")
             t.start()

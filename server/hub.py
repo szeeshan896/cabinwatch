@@ -33,7 +33,8 @@ STATE_FIELDS = (
     "baby_mode", "armed", "disk_free_gb", "clips", "retention_hours",
     "quiet_for_s", "silent_for_s", "moved_ago_s", "battery", "charging",
     "location", "noise_filter", "ptz",
-    "ptz_presets", "lenses", "active_lens", "zoom", "rotate", "has_audio",
+    "ptz_presets", "lenses", "active_lens", "zoom", "rotate", "alarm",
+    "has_siren", "has_audio",
     "has_speaker",
 )
 
@@ -90,6 +91,8 @@ class Camera:
             "active_lens": None,
             "zoom": 1.0,
             "rotate": 0,                 # degrees to stand the picture up
+            "alarm": False,              # siren and torch going
+            "has_siren": False,          # this device can make a noise
             "has_audio": False,
             "has_speaker": False,
         }
