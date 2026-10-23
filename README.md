@@ -452,6 +452,30 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### Making a laptop camera come back by itself
+
+A camera that only runs while somebody has a window open is not a camera. It
+lasts until the first Windows update, the first power cut, or the first time
+somebody tidies the desktop.
+
+On the settings page there is now a **Start by itself** choice, or from a
+terminal:
+
+```bash
+python agent/agent.py --start-with-windows     # and --no-start-with-windows
+```
+
+On Windows that is an entry under your own user's Run key — no administrator
+rights, no installer, and nothing left behind when you turn it off. On Linux
+it is a systemd user service, for a Raspberry Pi left plugged in as the bridge
+to an IP camera.
+
+**The part that catches people:** this starts when you *log in*, not when the
+machine powers up. A laptop sitting at the login screen after a power cut is
+not watching anything. If it is a machine kept for this, turn on automatic
+sign-in (`netplwiz` on Windows) so a restart takes it all the way back. On a
+Pi, `sudo loginctl enable-linger $USER` does the same job.
+
 ### Hours — so you stop being alerted about yourself
 
 A camera you have to arm and disarm by hand ends up disarmed. You turn it off

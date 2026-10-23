@@ -14,6 +14,7 @@ cameras at once, each appearing separately on the dashboard.
     python agent/agent.py --only cabin     # just one camera from the config
     python agent/agent.py --list-cameras   # see what this machine can see
     python agent/agent.py --probe-ptz 0    # can we drive this camera's motor?
+    python agent/agent.py --start-with-windows   # come back after a restart
 
 What it does per camera
     - reads frames and writes them to this machine's own disk, one file a
@@ -47,6 +48,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ptz as ptz_mod
+import autostart
 import setup_wizard
 import local_ui
 from resample import Resampler
@@ -1215,6 +1217,11 @@ def main():
                          "(can be given more than once)")
     ap.add_argument("--list-cameras", action="store_true",
                     help="show which cameras this machine can open, then exit")
+    ap.add_argument("--start-with-windows", action="store_true",
+                    help="have this agent start by itself when you log in "
+                         "(a systemd user service on Linux), then exit")
+    ap.add_argument("--no-start-with-windows", action="store_true",
+                    help="undo that, then exit")
     ap.add_argument("--probe-ptz", metavar="SOURCE", default=None,
                     help="ask a camera whether its motor can be driven from "
                          "here, and print the config block for it")
@@ -1246,6 +1253,18 @@ def main():
                   "line above for why.")
         else:
             print("\nNo microphones found.")
+        return
+
+    if args.start_with_windows or args.no_start_with_windows:
+        if not autostart.supported():
+            sys.exit("This machine has no way to register a startup entry "
+                     "that I know of.")
+        if args.no_start_with_windows:
+            ok, detail = autostart.remove()
+            print(detail if ok else f"Could not remove it: {detail}")
+            return
+        ok, detail = autostart.install()
+        print(autostart.explain(ok, detail))
         return
 
     if args.probe_ptz is not None:

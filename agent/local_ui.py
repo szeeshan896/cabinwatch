@@ -25,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
 
+import autostart
+
 
 class ControlPanel:
     """Serves the settings page and applies what you change on it."""
@@ -101,6 +103,12 @@ class ControlPanel:
                         self._send(404, b"could not open that camera")
                     else:
                         self._send(200, jpeg, "image/jpeg")
+                elif path == "/api/autostart":
+                    want = bool(self._body().get("on"))
+                    ok, detail = panel.set_autostart(want)
+                    self._json({"ok": ok, "detail": detail,
+                                "on": bool(panel.autostart_on())},
+                               200 if ok else 400)
                 elif path == "/api/open-folder":
                     panel.open_folder()
                     self._json({"ok": True})
@@ -176,7 +184,27 @@ class ControlPanel:
             "cameras": cams,
             "ffmpeg": _ffmpeg_ok(),
             "editable": bool(getattr(sup, "editable", True)),
+            "autostart_possible": autostart.supported(),
+            "autostart_on": self.autostart_on(),
+            "windows": os.name == "nt",
         }
+
+    # -- coming back by itself ----------------------------------------------
+    def autostart_on(self):
+        try:
+            return bool(autostart.status())
+        except Exception:
+            return False
+
+    def set_autostart(self, want):
+        try:
+            ok, detail = autostart.install() if want else autostart.remove()
+        except Exception as e:
+            return False, str(e)
+        if not ok:
+            return False, detail
+        return True, ("It will start by itself from now on."
+                      if want else "It will not start by itself any more.")
 
     def devices(self):
         """What this machine can actually open, asked fresh."""
@@ -509,6 +537,14 @@ PAGE = r"""<!doctype html>
       <button class="alt" onclick="openFolder()">Open the recordings folder</button>
     </div>
     <div id="noffmpeg"></div>
+    <div id="autostartbox" style="display:none;margin-top:14px">
+      <label>Start by itself</label>
+      <select id="autostart">
+        <option value="1">Yes &mdash; start when I log in</option>
+        <option value="0">No &mdash; I will start it myself</option>
+      </select>
+      <div class="note" id="autostartnote"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -545,6 +581,24 @@ async function load() {
   document.getElementById('noffmpeg').innerHTML = state.ffmpeg ? '' :
     '<div class="warn"><b>Recordings will have no sound.</b> ffmpeg was not ' +
     'found on this machine. Install it with: <code>pip install imageio-ffmpeg</code></div>';
+
+  // A camera that only runs while somebody has this window open is not a
+  // camera, so this is worth putting where it will be seen.
+  const abox = document.getElementById('autostartbox');
+  abox.style.display = state.autostart_possible ? '' : 'none';
+  if (state.autostart_possible) {
+    const sel = document.getElementById('autostart');
+    if (document.activeElement !== sel) sel.value = state.autostart_on ? '1' : '0';
+    sel.onchange = () => setAutostart(sel.value === '1');
+    document.getElementById('autostartnote').textContent = state.autostart_on
+      ? (state.windows
+         ? 'Starts when you log in to Windows. After a power cut the machine '
+           + 'has to reach the desktop - turn on automatic sign-in if nobody '
+           + 'will be there to type a password.'
+         : 'Registered as a systemd user service. For it to start at boot '
+           + 'with nobody logged in, run: sudo loginctl enable-linger $USER')
+      : 'Right now it only runs while this program is open.';
+  }
   if (state.editable === false) {
     // A hand-written config.py wins over the saved file, so saving here
     // would appear to work and then be ignored. Say so and stop.
@@ -552,6 +606,21 @@ async function load() {
     msg('These settings come from agent/config.py, so change them there.', 'bad');
   }
   renderCams();
+}
+
+async function setAutostart(on) {
+  const note = document.getElementById('autostartnote');
+  note.textContent = on ? 'Setting it up...' : 'Removing it...';
+  try {
+    const r = await fetch('/api/autostart', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({on: on})
+    });
+    const j = await r.json();
+    note.textContent = j.detail || '';
+  } catch (e) {
+    note.textContent = 'That did not work: ' + e.message;
+  }
 }
 
 function pick(id, value) {
