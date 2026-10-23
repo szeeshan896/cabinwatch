@@ -97,6 +97,18 @@ class Settings(context: Context) {
         get() = sp.getInt(K_ROTATE, 0)
         set(v) = sp.edit().putInt(K_ROTATE, ((v % 360) + 360) % 360).apply()
 
+    /**
+     * In the cabin, only wake me for a person.
+     *
+     * Movement alone is a poor burglar alarm: a curtain, a fan, headlights
+     * on a wall. After a few nights of those you stop trusting the phone,
+     * which is worse than no alarm at all. Off for a baby, where any
+     * movement is the point.
+     */
+    var personDetection: Boolean
+        get() = sp.getBoolean(K_PERSON, !babyMode)
+        set(v) = sp.edit().putBoolean(K_PERSON, v).apply()
+
     var soundSensitivity: Float
         get() = sp.getFloat(K_SENS, 1.0f)
         set(v) = sp.edit().putFloat(K_SENS, v).apply()
@@ -130,6 +142,7 @@ class Settings(context: Context) {
         private const val K_RECAUDIO = "record_audio"
         private const val K_NOISE = "noise_filter"
         private const val K_ROTATE = "rotate"
+        private const val K_PERSON = "person_detection"
         private const val K_SENS = "sound_sensitivity"
         private const val K_MOTION = "motion_sensitivity"
         private const val K_BOOT = "start_on_boot"

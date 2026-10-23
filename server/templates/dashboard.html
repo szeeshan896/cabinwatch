@@ -875,6 +875,7 @@ function buildCard(c) {
         <button data-act="arm">Alerts</button>
         <button data-act="clips">Clips</button>
         <button data-act="when" title="Set the hours you are normally there, so it arms itself around you">Hours</button>
+        <button data-act="people" title="Only raise an alert when somebody is actually in view - a curtain or a fan will not">People only</button>
         <button data-act="noise" title="Cut steady fan and cooler noise so the baby is audible">Fan filter</button>
         <button data-act="rotate" title="Turn the picture a quarter turn - for a camera that is not mounted the right way up">Rotate</button>
         <button data-act="alarm" title="Sound a siren and flash the torch on the device itself">Siren</button>
@@ -925,6 +926,10 @@ function buildCard(c) {
   act("clips").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
     openClips(id, c2.name || id, c2.online);
+  };
+  act("people").onclick = () => {
+    const c2 = cams.find(x => x.id === id) || {};
+    cmd(id, "person", { on: !c2.person_detection });
   };
   act("when").onclick = () => {
     const c2 = cams.find(x => x.id === id) || {};
@@ -1065,6 +1070,11 @@ function updateCard(el, c) {
 
   // Say which way it is turned, so a camera left sideways is obvious
   // without having to work it out from the picture.
+  // Only meaningful away from a cot: for a baby, any movement is the point.
+  const people = q('[data-act="people"]');
+  people.classList.toggle("active", !!c.person_detection);
+  people.style.display = c.baby_mode ? "none" : "";
+
   const siren = q('[data-act="alarm"]');
   setText(siren, c.alarm ? "Siren - stop" : "Siren");
   siren.classList.toggle("talking", !!c.alarm);

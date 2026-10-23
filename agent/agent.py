@@ -498,6 +498,13 @@ class CameraSession:
             except (TypeError, ValueError):
                 pass
 
+        elif t == "person_detection":
+            self.person.enabled = bool(m.get("on"))
+            print(f"[{self.cam_id}] alert on "
+                  + ("people only" if self.person.enabled
+                     else "any movement"))
+            self.push_state()
+
         elif t == "alarm":
             self.set_alarm(m.get("on"))
 
@@ -1034,6 +1041,8 @@ class CameraSession:
             "zoom": self.zoom,
             "rotate": self.rotate,
             "alarm": bool(self.alarm),
+            "person_detection": bool(self.person.enabled
+                                     and not self.baby_mode),
             "has_siren": bool(self.speaker_enabled),
             "noise_filter": bool(self.denoise),
             "has_audio": bool(self.audio_enabled),

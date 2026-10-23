@@ -53,6 +53,7 @@ SIMPLE_COMMANDS = {
     "zoom":    "zoom",          # {"value": 1.0 .. 4.0} - digital zoom
     "rotate":  "rotate",        # {"value": 0|90|180|270} - stand the view up
     "alarm":   "alarm",         # {"on": bool} - siren and torch, as a scare
+    "person":  "person_detection",  # {"on": bool} - only alert on people
     "ptz":     "ptz",           # {"action": "left"|"right"|"up"|"down"|
                                 #  "stop"|"preset"|"save_preset"|"home",
                                 #  "speed": 0..1, "preset": "<name>"}

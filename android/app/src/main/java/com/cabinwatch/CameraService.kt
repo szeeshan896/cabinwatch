@@ -86,6 +86,7 @@ class CameraService : LifecycleService(), WsClient.Events {
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var analysis: ImageAnalysis? = null
+    private val person = PersonDetector()
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
     private var currentClipName: String? = null
@@ -191,6 +192,7 @@ class CameraService : LifecycleService(), WsClient.Events {
         } catch (_: Exception) {
         }
         sensors = null
+        person.close()
         setAlarm(false)
         stopMic()
         stopSegment()
@@ -423,12 +425,8 @@ class CameraService : LifecycleService(), WsClient.Events {
                 val moved = motion.detect(bitmap)
                 if (moved) lastMotionAt = now
                 if (moved && !motionOn && settings.armed) {
-                    fireEvent(
-                        "motion",
-                        if (settings.babyMode) "Your baby moved."
-                        else "Movement in view of this camera.",
-                        bitmap, uprightDegrees(proxy.imageInfo.rotationDegrees)
-                    )
+                    raiseMovement(bitmap,
+                                  uprightDegrees(proxy.imageInfo.rotationDegrees))
                 }
                 motionOn = moved
                 latestBitmap = bitmap
@@ -453,6 +451,39 @@ class CameraService : LifecycleService(), WsClient.Events {
     }
 
     /** Rotate, scale, burn in the name and time, and compress. */
+    /**
+     * Something moved. Decide whether it is worth waking somebody for.
+     *
+     * For a baby, any movement is the point. For the cabin, movement is
+     * only worth an alert if there is a person in it - so the frame goes
+     * to the phone's own labeller first, and the alert waits for its
+     * answer. The picture never leaves the phone to get it.
+     */
+    private fun raiseMovement(frame: Bitmap, rotation: Int) {
+        if (settings.babyMode || !settings.personDetection) {
+            fireEvent(
+                "motion",
+                if (settings.babyMode) "Your baby moved."
+                else "Movement in view of this camera.",
+                frame, rotation
+            )
+            return
+        }
+
+        val snapshot = frame.copy(frame.config ?: Bitmap.Config.ARGB_8888, false)
+        person.ask(snapshot) { sawSomebody ->
+            if (sawSomebody) {
+                fireEvent("person", "Someone is in view of this camera.",
+                          snapshot, rotation)
+            } else {
+                // Worth knowing it happened, but not worth a notification:
+                // this is the curtain, and it is why the alerts stay
+                // believable.
+                Log.i(TAG, "movement with nobody in it - not raising an alert")
+            }
+        }
+    }
+
     /**
      * The camera's own sensor rotation, plus however the phone is mounted.
      */
@@ -1074,6 +1105,9 @@ class CameraService : LifecycleService(), WsClient.Events {
             "baby_mode" -> {
                 settings.babyMode = msg.optBoolean("on"); pushState()
             }
+            "person_detection" -> {
+                settings.personDetection = msg.optBoolean("on"); pushState()
+            }
             "arm" -> {
                 settings.armed = msg.optBoolean("on"); pushState()
             }
@@ -1192,6 +1226,7 @@ class CameraService : LifecycleService(), WsClient.Events {
             put("audio_level", Math.round(sound.level * 1000.0) / 1000.0)
             put("baby_mode", settings.babyMode)
             put("noise_filter", settings.noiseFilter)
+            put("person_detection", settings.personDetection && !settings.babyMode)
             put("rotate", settings.rotate)
             put("alarm", sirenOn.get())
             put("has_siren", true)

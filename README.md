@@ -562,6 +562,22 @@ A camera that simply stops stays on the dashboard, greyed out, with the time
 it was last heard from, so "when did it go?" has an answer. **Remove** takes
 it off the list once you are done with it.
 
+### Only waking you for a person
+
+Movement on its own is a poor burglar alarm. A curtain over an open window, a
+ceiling fan, headlights crossing a wall — they all move, and after a few
+nights of being woken by them you stop trusting the phone. That is worse than
+no alarm, because now the real one gets ignored too.
+
+**People only** on a cabin camera makes an alert wait until somebody is
+actually in the frame. The phone decides that itself, with its own labeller,
+and the picture never leaves it to get the answer. It is only asked after
+something has already moved, so an empty room at night costs nothing.
+
+It does not appear on a baby camera, where any movement is the point. And if
+a phone cannot answer — an old one without the parts — it raises the alert
+anyway rather than swallowing it.
+
 ### Finding a recording
 
 Round-the-clock recording makes several hundred files a day, and a flat list

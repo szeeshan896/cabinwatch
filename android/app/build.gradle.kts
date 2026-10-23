@@ -54,5 +54,10 @@ dependencies {
     implementation("androidx.camera:camera-video:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
 
+    // Telling a person from a curtain, on the phone itself. The model is
+    // bundled rather than downloaded, so a camera set up on an office wifi
+    // and then carried somewhere else still works.
+    implementation("com.google.mlkit:image-labeling:17.0.9")
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
