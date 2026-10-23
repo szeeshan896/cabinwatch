@@ -452,6 +452,28 @@ camera's own orientation, because the browser records the camera stream
 directly rather than the turned picture. The Android app and the laptop agent
 turn their recordings too.
 
+### If the camera itself is what gets stolen
+
+Recordings live on the device that made them. For the baby that is exactly
+right — nothing is sent anywhere until you ask for it. For the cabin it has a
+hole straight through the middle of it: the thing being recorded is somebody
+taking the device, and when they take it the recording goes too.
+
+So when a camera finishes a clip that a **person**, a **thud**, the camera
+**being moved**, or **crying** was raised during, it tells the server, and the
+server pulls a copy and keeps it. The alert in Recent Activity then carries a
+**saved clip** link that still works after the camera is gone.
+
+Ordinary movement is deliberately not on that list — on a camera watching a
+room somebody lives in it would fill the store within the hour and push out
+the clip that mattered. Change it with `EVIDENCE_KINDS` if you want to.
+
+The store is small on purpose: 800 MB and 14 days by default
+(`EVIDENCE_MAX_MB`, `EVIDENCE_DAYS`), oldest dropped first. And be clear about
+what it is not: **on Railway the disk is wiped by every redeploy.** This
+survives the camera going missing, not everything. Download anything that
+matters.
+
 ### If the power goes out
 
 An mp4 only becomes playable when it is closed properly — the index saying

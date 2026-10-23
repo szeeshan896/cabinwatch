@@ -551,12 +551,35 @@ class CameraService : LifecycleService(), WsClient.Events {
 
     private fun stopSegment() {
         handler.removeCallbacks(segmentRoller)
+        val finished = currentClipName
         try {
             activeRecording?.stop()
         } catch (_: Exception) {
         }
         activeRecording = null
         currentClipName = null
+        if (finished != null) offerClip(finished)
+    }
+
+    /**
+     * Tell the server about a finished clip that an alert was raised during.
+     *
+     * The recording is on this phone, which is no use at all if the phone is
+     * what gets taken. The server decides whether it wants a copy and pulls
+     * it the usual way; nothing is pushed uninvited.
+     *
+     * The file takes a moment to be closed and written after stop() returns,
+     * so the offer waits for it rather than racing it.
+     */
+    private fun offerClip(name: String) {
+        if (!clips.isKept(name)) return
+        handler.postDelayed({
+            ws?.sendJson(JSONObject().apply {
+                put("t", "clip_ready")
+                put("file", name)
+                put("event", true)
+            })
+        }, 2500)
     }
 
     private val sweeper = object : Runnable {

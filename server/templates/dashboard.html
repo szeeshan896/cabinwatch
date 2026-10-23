@@ -166,6 +166,8 @@
   .ev.k-battery_low .k { color: #d29922; }
   .ev.k-cry .k { color: #ffa657; }
   .ev.k-offline .k { color: #d29922; }
+  .ev .saved { color: #3fb950; font-size: 11px; text-decoration: none; }
+  .ev .saved:hover { text-decoration: underline; }
 
   /* modal for recordings stored on a device */
   #modal {
@@ -930,7 +932,10 @@ function renderEvents() {
         <div class="k">${esc(KIND_LABEL[e.kind] || e.kind)}</div>
         <div class="d">${esc(e.camera_name)}${e.detail ? " - " + esc(e.detail) : ""}</div>
       </div>
-      <div class="t">${esc(clockTime(e.at))}</div>
+      <div class="t">${esc(clockTime(e.at))}
+        ${e.saved ? `<br><a class="saved" href="${esc(e.saved)}"
+          target="_blank" title="A copy of this clip is on the server, so it
+          is still here even if the camera is not">saved clip</a>` : ""}</div>
     </div>`).join("");
 }
 

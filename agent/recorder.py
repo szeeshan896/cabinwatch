@@ -33,8 +33,12 @@ class Recorder:
     def __init__(self, cam_id, clips_dir, fps=15.0, segment_seconds=300,
                  retention_hours=72, event_retention_hours=336,
                  max_disk_gb=20.0, always_record=True, prebuffer_seconds=6,
-                 audio_rate=16000, want_audio=True):
+                 audio_rate=16000, want_audio=True, on_clip_done=None):
         self.cam_id = cam_id
+        # Called with (name, was_an_event) once a clip is finished and
+        # playable. The agent uses it to offer event clips to the server,
+        # so the footage is not only on a device somebody can walk off with.
+        self.on_clip_done = on_clip_done
         self.dir = os.path.join(clips_dir, cam_id)
         self.fps = float(fps)
         self.segment_seconds = int(segment_seconds)
@@ -314,12 +318,22 @@ class Recorder:
         if name is None or video_tmp is None:
             return
 
+        was_event = name in self._keep
+
+        def finished(path, ok):
+            if ok and self.on_clip_done is not None:
+                try:
+                    self.on_clip_done(name, was_event)
+                except Exception as e:
+                    print(f"[rec {self.cam_id}] clip callback failed: {e}")
+
         # Joining happens off the capture thread, so a slow encode never
         # drops frames or stalls the live view.
         self._muxes = [t for t in self._muxes if t.is_alive()]
         self._muxes.append(muxer.mux(
             video_tmp, audio_tmp, os.path.join(self.dir, name),
-            declared_fps=self.fps, frames=frames, seconds=seconds))
+            declared_fps=self.fps, frames=frames, seconds=seconds,
+            on_done=finished))
 
     def stop(self, timeout=25.0):
         """Close the open clip and wait for it to finish being written.

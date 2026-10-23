@@ -487,6 +487,38 @@ class Hub:
                     del self.thumbs[k]
         return ev
 
+    def wants_copy(self, cam_id, filename):
+        """Is this clip worth keeping a copy of here?
+
+        Decided by what was raised while it was being written. Ordinary
+        movement is left off that list by default: on a camera watching a
+        room somebody is in, it would fill the store inside an hour and
+        push out the one clip that mattered.
+        """
+        for ev in self.events:
+            if (ev.get("camera") == cam_id and ev.get("clip") == filename
+                    and ev.get("kind") in settings.EVIDENCE_KINDS):
+                return True
+        return False
+
+    def forget_evidence(self, key):
+        """A saved copy has been dropped; stop offering a link to it."""
+        link = f"/saved/{key}"
+        for ev in self.events:
+            if ev.get("saved") == link:
+                ev.pop("saved", None)
+
+    def note_evidence(self, cam_id, filename, key):
+        """Mark the events that this clip covers as having a kept copy.
+
+        An alert points at the clip that was being written when it fired,
+        so once that clip is safely here, every event waiting on it can say
+        so - and can still be watched after the camera itself is gone.
+        """
+        for ev in self.events:
+            if ev.get("camera") == cam_id and ev.get("clip") == filename:
+                ev["saved"] = f"/saved/{key}"
+
     def thumb(self, eid):
         return self.thumbs.get(eid)
 

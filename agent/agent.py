@@ -210,7 +210,15 @@ class CameraSession:
             prebuffer_seconds=cfg.PREBUFFER_SECONDS,
             audio_rate=AUDIO_RATE,
             want_audio=want_audio,
+            on_clip_done=self._clip_finished,
         )
+
+        # Recordings live on the device, which is the point - and the problem
+        # the moment the device is what gets stolen. So a clip an alert was
+        # raised during is offered to the server as soon as it is finished,
+        # and a copy is kept there too.
+        self.upload_events = bool(conf.get(
+            "upload_events", getattr(cfg, "UPLOAD_EVENT_CLIPS", True)))
 
         # -- audio
         self.audio_device = conf.get("audio_device", cfg.AUDIO_DEVICE)
@@ -886,6 +894,12 @@ class CameraSession:
     # Kinds that get their own, longer gap: these are rare and serious, and
     # should not be throttled by whatever else has been happening.
     SLOW_KINDS = {"moved": 120.0}
+
+    def _clip_finished(self, name, was_event):
+        """A segment is written and playable. Offer it if it matters."""
+        if not was_event or not self.upload_events:
+            return
+        self.send({"t": "clip_ready", "file": name, "event": True})
 
     def fire_event(self, kind, detail, frame=None):
         now = time.time()

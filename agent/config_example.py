@@ -31,6 +31,13 @@ VERIFY_TLS = True
 CLIPS_DIR = "clips"
 
 SEGMENT_SECONDS = 300       # how long one video file covers, in seconds.
+
+# Offer the server a copy of any clip an alert was raised during. The server
+# decides whether it wants one; nothing is sent uninvited. This is what makes
+# the footage survive the camera itself being stolen, so leave it on for a
+# cabin. For the cabin, a shorter SEGMENT_SECONDS also means the copy arrives
+# sooner, because a clip can only be sent once it is finished.
+UPLOAD_EVENT_CLIPS = True
                             # 300 = 5 minutes. Shorter files are quicker to
                             # scrub through and cost less if the machine
                             # loses power mid-write; longer ones are nicer to

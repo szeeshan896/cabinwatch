@@ -578,6 +578,10 @@ function startRecorder() {
       await dbPut({ name, blob, size: blob.size, at: startedAt, keep,
                     type: blob.type });
       await houseKeep();
+      // The clip is on this phone, which is no use at all if the phone is
+      // what goes missing. Offer the server a copy of the ones an alert
+      // was raised during; it pulls what it wants.
+      if (keep) send({ t: "clip_ready", file: name, event: true });
     } catch (e) { log("could not save clip: " + e.message); }
   };
   recorder.start();

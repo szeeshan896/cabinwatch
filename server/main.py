@@ -22,14 +22,18 @@ import contextlib
 
 from fastapi import (FastAPI, WebSocket, WebSocketDisconnect, Request,
                      Response, Form, HTTPException)
-from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
-                               PlainTextResponse, StreamingResponse)
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, PlainTextResponse,
+                               StreamingResponse)
 from fastapi.templating import Jinja2Templates
 
 from . import settings
 from . import protocol
 from .hub import hub, Camera, Viewer, reaper, STATE_FIELDS
 from .notify import notifier
+from .evidence import Store
+
+evidence = Store(on_removed=lambda key: hub.forget_evidence(key))
 
 templates = Jinja2Templates(directory="server/templates")
 
@@ -267,6 +271,66 @@ async def forget_camera(cam_id: str, request: Request):
     return {"ok": True}
 
 
+async def _keep_a_copy(cam: Camera, filename: str):
+    """Pull one clip off a camera and put it in the evidence store."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return
+    if evidence.has(cam.cam_id, filename):
+        return
+    if not hub.wants_copy(cam.cam_id, filename):
+        return
+
+    key, part = evidence.begin(cam.cam_id, cam.name, filename)
+    xfer = await cam.start_transfer(filename, timeout=30.0)
+    if xfer is None:
+        print(f"[evidence] {cam.cam_id} did not send {filename}")
+        return
+
+    written = 0
+    try:
+        with open(part, "wb") as out:
+            while True:
+                chunk = await asyncio.wait_for(xfer.queue.get(), timeout=120)
+                if chunk is None:
+                    break
+                out.write(chunk)
+                written += len(chunk)
+    except Exception as e:
+        print(f"[evidence] {filename} did not arrive: {e}")
+        evidence.abandon(part)
+        return
+
+    if written < 1024:
+        evidence.abandon(part)
+        return
+
+    evidence.finish(key, part, cam.cam_id, cam.name, filename)
+    print(f"[evidence] kept {filename} from {cam.cam_id} "
+          f"({written / 1048576:.1f} MB)")
+    hub.note_evidence(cam.cam_id, filename, key)
+    await hub.broadcast_state()
+
+
+@app.get("/saved")
+async def list_saved(request: Request, cam: str = ""):
+    """What the server is holding its own copy of."""
+    require_login(request)
+    return {"clips": evidence.list(cam or None),
+            "free_mb": evidence.free_mb(),
+            "keeping_days": settings.EVIDENCE_DAYS}
+
+
+@app.get("/saved/{key}")
+async def get_saved(key: str, request: Request):
+    """Play or download the server's copy, even if the camera is gone."""
+    require_login(request)
+    path = evidence.path_of(key)
+    if path is None:
+        raise HTTPException(status_code=404, detail="no such saved clip")
+    return FileResponse(path, media_type="video/mp4",
+                        filename=key.split("__", 1)[-1])
+
+
 # ---------------------------------------------------------------------------
 # Commands to a camera
 # ---------------------------------------------------------------------------
@@ -394,6 +458,13 @@ async def _on_camera_message(cam: Camera, text: str):
         await notifier.send(cam.cam_id, cam.name, kind, detail or None,
                             thumb_url=thumb_url)
         await hub.broadcast_state()
+
+    elif t == "clip_ready":
+        # The device has finished a clip an alert was raised during, and is
+        # offering it. Take a copy, so the footage does not only exist on
+        # the thing that might be what gets taken.
+        if settings.EVIDENCE and msg.get("event") and msg.get("file"):
+            asyncio.create_task(_keep_a_copy(cam, str(msg["file"])))
 
     elif t == "clips":
         cam.deliver_clips(msg.get("items") or [])

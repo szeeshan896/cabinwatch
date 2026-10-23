@@ -79,6 +79,21 @@ HD_QUALITY = _int("HD_QUALITY", 75)
 # Snapshot mode: one still every N seconds. Cheapest way to peek.
 SNAPSHOT_EVERY = _float("SNAPSHOT_EVERY", 2.0)
 
+# -- evidence ----------------------------------------------------------------
+# A copy of the footage an alert was raised during, kept here rather than
+# only on the device - because for a theft, the device is what goes missing.
+# Small on purpose: this is evidence, not the archive.
+EVIDENCE = _bool("SAVE_EVENT_CLIPS", True)
+EVIDENCE_DIR = _env("EVIDENCE_DIR", "evidence")
+EVIDENCE_MAX_MB = _int("EVIDENCE_MAX_MB", 800)
+EVIDENCE_DAYS = _int("EVIDENCE_DAYS", 14)
+# Which alerts are worth a copy. Ordinary movement is not on this list: on a
+# busy camera it would fill the store with nothing in minutes.
+EVIDENCE_KINDS = tuple(
+    k.strip() for k in
+    _env("EVIDENCE_KINDS", "person,impact,moved,cry").split(",") if k.strip()
+)
+
 # -- housekeeping ------------------------------------------------------------
 EVENT_HISTORY = _int("EVENT_HISTORY", 300)      # events kept in memory
 AGENT_TIMEOUT = _float("AGENT_TIMEOUT", 45.0)   # mark offline after silence
